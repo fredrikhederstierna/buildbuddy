@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# GNU Toolchain Build Buddy v1
+# GNU Toolchain Build Buddy v1.0.1
 #
 # Simple wizard to download, configure and build the GNU toolchain
 # targeting especially bare-metal cross-compilers for embedded systems.
@@ -31,6 +31,13 @@
 # OTHER DEALINGS IN THE SOFTWARE.
 #
 # For more information, please refer to <http://unlicense.org/>
+
+#
+# ChangeLog history:
+#
+# 1.0    Initial release
+# 1.0.1  Fix that GDB prior to 7.8 used bz2 not xz as compressor.
+#
 
 # Some packages possibly needed:
 #   libz-dev
@@ -67,9 +74,11 @@ APPLY_PATCH_DEFAULT="Y"
 DOWNLOAD_GNU_SERVER="http://ftp.gnu.org/gnu"
 DOWNLOAD_NEWLIB_SERVER="ftp://sourceware.org/pub/newlib"
 
+GDB_ARCH_SUFFIX=""
+
 # Get user input what to build
 
-printf "GNU Toolchain BuildBuddy v1\n"
+printf "GNU Toolchain BuildBuddy v1.0.1\n"
 printf "Enter information what you want to build:\n"
 
 # Choose target
@@ -120,6 +129,14 @@ then
   read -p "Please enter GDB version [$GDB_VERSION_DEFAULT]: " GDB_VERSION
   GDB_VERSION="${GDB_VERSION:-$GDB_VERSION_DEFAULT}"
   echo -e "GDB version: $GDB_VERSION"
+  if [[ $GDB_VERSION < "7.8" ]]
+  then
+   echo -e "Use bz2 for decompression"
+   GDB_ARCH_SUFFIX="bz2"
+  else
+   echo -e "Use xz for decompression"
+   GDB_ARCH_SUFFIX="xz"
+  fi
 fi
 
 # Choose toolchain destination build path
@@ -180,8 +197,13 @@ NEWLIB_SRC_FILE="newlib-$NEWLIB_VERSION.tar.gz"
 
 if [[ $BUILD_GDB == "Yes" ]]
 then
-  GDB_DIR="gdb-$GDB_VERSION" 
-  GDB_SRC_FILE="gdb-$GDB_VERSION.tar.xz"
+  GDB_DIR="gdb-$GDB_VERSION"
+  if [[ $GDB_ARCH_SUFFIX == "xz" ]]
+  then
+    GDB_SRC_FILE="gdb-$GDB_VERSION.tar.xz"
+  else
+    GDB_SRC_FILE="gdb-$GDB_VERSION.tar.bz2"
+  fi
 fi
 
 # Set rwx access
@@ -233,7 +255,12 @@ if [[ $BUILD_GDB == "Yes" ]]
 then
   rm -fr "$GDB_DIR"
   echo -e "Unpacking gdb sources..."
-  tar xJf "$GDB_SRC_FILE"
+  if [[ $GDB_ARCH_SUFFIX == "xz" ]]
+  then
+    tar xJf "$GDB_SRC_FILE"
+  else
+    tar xjf "$GDB_SRC_FILE"
+  fi
 fi
 
 # Create sym links to newlib
