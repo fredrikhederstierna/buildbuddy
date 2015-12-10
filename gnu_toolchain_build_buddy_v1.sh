@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# GNU Toolchain Build Buddy v1.0.1
+# GNU Toolchain Build Buddy v1.0.2
 #
 # Simple wizard to download, configure and build the GNU toolchain
 # targeting especially bare-metal cross-compilers for embedded systems.
@@ -37,6 +37,7 @@
 #
 # 1.0    Initial release
 # 1.0.1  Fix that GDB prior to 7.8 used bz2 not xz as compressor.
+# 1.0.2  Fix that GDB version sorting handles that 7.9 < 7.10.
 #
 
 # Some packages possibly needed:
@@ -49,6 +50,13 @@
 #   texinfo
 #   libncurses-dev
 #   xz
+#
+# From GCC 5.3 also this seems needed:
+#   libisl-dev
+
+# BUGS:
+# Binutils 2.25.1 assembler does not support 'cortex-m7' cpu option.
+# https://bugs.archlinux.org/task/46951
 
 # Set shell to exit if error (to debug and dump output use -ex)
 
@@ -60,9 +68,9 @@ TARGET_DEFAULT=arm-none-eabi
 LANGUAGES_DEFAULT=c,c++
 
 BINUTILS_VERSION_DEFAULT=2.25.1
-GCC_VERSION_DEFAULT=5.2.0
+GCC_VERSION_DEFAULT=5.3.0
 NEWLIB_VERSION_DEFAULT=2.2.0
-GDB_VERSION_DEFAULT=7.9.1
+GDB_VERSION_DEFAULT=7.10.1
 
 DEST_PATH_DEFAULT="/usr/local/gcc"
 DEST_PATH_SUFFIX_DEFAULT=""
@@ -78,7 +86,7 @@ GDB_ARCH_SUFFIX=""
 
 # Get user input what to build
 
-printf "GNU Toolchain BuildBuddy v1.0.1\n"
+printf "GNU Toolchain BuildBuddy v1.0.2\n"
 printf "Enter information what you want to build:\n"
 
 # Choose target
@@ -129,7 +137,10 @@ then
   read -p "Please enter GDB version [$GDB_VERSION_DEFAULT]: " GDB_VERSION
   GDB_VERSION="${GDB_VERSION:-$GDB_VERSION_DEFAULT}"
   echo -e "GDB version: $GDB_VERSION"
-  if [[ $GDB_VERSION < "7.8" ]]
+  # Use version sort to get lowest version
+  GDB_VERSION_MIN=`echo -ne "7.8\n$GDB_VERSION" |sort -V |head -n1`
+  # From version 7.8 and newer GDB use xz as compression algorithm
+  if [[ $GDB_VERSION_MIN < "7.8" ]]
   then
    echo -e "Use bz2 for decompression"
    GDB_ARCH_SUFFIX="bz2"
