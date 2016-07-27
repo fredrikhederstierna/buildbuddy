@@ -67,10 +67,10 @@ set -e
 TARGET_DEFAULT=arm-none-eabi
 LANGUAGES_DEFAULT=c,c++
 
-BINUTILS_VERSION_DEFAULT=2.25.1
-GCC_VERSION_DEFAULT=5.3.0
-NEWLIB_VERSION_DEFAULT=2.2.0
-GDB_VERSION_DEFAULT=7.10.1
+BINUTILS_VERSION_DEFAULT=2.26.1
+GCC_VERSION_DEFAULT=6.1.0
+NEWLIB_VERSION_DEFAULT=2.4.0
+GDB_VERSION_DEFAULT=7.11.1
 
 DEST_PATH_DEFAULT="/usr/local/gcc"
 DEST_PATH_SUFFIX_DEFAULT=""
@@ -297,20 +297,22 @@ if [[ $APPLY_PATCH == "Yes" ]]
 then
   # Patches for GCC regrename
   echo -e "Applying patches..."
-  ( cd $GCC_DIR ; patch -p1 -i ../patches/0001-Regrename-pass-with-preferred-register.patch ; )
+
+  # Add patches here to apply, example
+  #( cd $GCC_DIR ; patch -p1 -i ../patches/0001-Regrename-pass-with-preferred-register.patch ; )
 
   # Patches for arm-none GDB corefile support
   if [[ $TARGET == *"arm"* ]]
   then
     if [[ $BUILD_GDB == "Yes" ]]
     then
-      if [[ $GDB_VERSION == "4.6.1" ]]
+      if [[ $GDB_VERSION == "7.6.1" ]]
       then
-        ( cd $GDB_DIR ; patch -p1 -i ../patches/gdb-4.6.1-arm-none-corefile.patch ; )
+        ( cd $GDB_DIR ; patch -p1 -i ../patches/gdb-7.6.1-arm-none-corefile.patch ; )
       fi
-      if [[ $GDB_VERSION == "4.9.1" ]]
+      if [[ $GDB_VERSION == "7.9.1" ]]
       then
-        ( cd $GDB_DIR ; patch -p1 -i ../patches/gdb-4.9.1-arm-none-corefile.patch ; )
+        ( cd $GDB_DIR ; patch -p1 -i ../patches/gdb-7.9.1-arm-none-corefile.patch ; )
       fi
     fi
   fi
@@ -335,7 +337,7 @@ ENABLE_OPTS="--enable-multilib"
 
 # Target specific flags
 
-# ARM specific flags
+# ARM specific flags, example tune for Cortex-M4(F)
 
 if [[ $TARGET == *"arm"* ]]
 then
