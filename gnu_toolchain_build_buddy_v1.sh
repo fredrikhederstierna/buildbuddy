@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# GNU Toolchain Build Buddy v1.0.2
+# GNU Toolchain Build Buddy v1.0.3
 #
 # Simple wizard to download, configure and build the GNU toolchain
 # targeting especially bare-metal cross-compilers for embedded systems.
@@ -38,6 +38,7 @@
 # 1.0    Initial release
 # 1.0.1  Fix that GDB prior to 7.8 used bz2 not xz as compressor.
 # 1.0.2  Fix that GDB version sorting handles that 7.9 < 7.10.
+# 1.0.3  Updated corefile patch for GDB version 7.11.1.
 #
 
 # Some packages possibly needed:
@@ -86,7 +87,7 @@ GDB_ARCH_SUFFIX=""
 
 # Get user input what to build
 
-printf "GNU Toolchain BuildBuddy v1.0.2\n"
+printf "GNU Toolchain BuildBuddy v1.0.3\n"
 printf "Enter information what you want to build:\n"
 
 # Choose target
@@ -313,6 +314,10 @@ then
       if [[ $GDB_VERSION == "7.9.1" ]]
       then
         ( cd $GDB_DIR ; patch -p1 -i ../patches/gdb-7.9.1-arm-none-corefile.patch ; )
+      fi
+      if [[ $GDB_VERSION == "7.11.1" ]]
+      then
+        ( cd $GDB_DIR ; patch -p1 -i ../patches/gdb-7.11.1-arm-none-corefile.patch ; )
       fi
     fi
   fi
