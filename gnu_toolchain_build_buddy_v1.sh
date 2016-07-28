@@ -317,7 +317,8 @@ then
       fi
       if [[ $GDB_VERSION == "7.11.1" ]]
       then
-        ( cd $GDB_DIR ; patch -p1 -i ../patches/gdb-7.11.1-arm-none-corefile.patch ; )
+#        ( cd $GDB_DIR ; patch -p1 -i ../patches/gdb-7.11.1-arm-none-corefile.patch ; )
+        ( cd $GDB_DIR ; patch -p1 -i ../patches/gdb-7.11.1-arm-none-corefile-unwind.patch ; )
       fi
     fi
   fi

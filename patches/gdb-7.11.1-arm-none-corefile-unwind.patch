@@ -1,0 +1,979 @@
+diff -crB --new-file ../gdb-7.11.1-orig/gdb/arm-none-tdep.c ./gdb/arm-none-tdep.c
+*** ../gdb-7.11.1-orig/gdb/arm-none-tdep.c	1970-01-01 01:00:00.000000000 +0100
+--- ./gdb/arm-none-tdep.c	2016-07-27 16:02:27.711570789 +0200
+***************
+*** 0 ****
+--- 1,627 ----
++ /* GNU none on ARM target support.
++ 
++    Copyright (C) 2016 Free Software Foundation, Inc.
++ 
++    This file is part of GDB.
++ 
++    This program is free software; you can redistribute it and/or modify
++    it under the terms of the GNU General Public License as published by
++    the Free Software Foundation; either version 3 of the License, or
++    (at your option) any later version.
++ 
++    This program is distributed in the hope that it will be useful,
++    but WITHOUT ANY WARRANTY; without even the implied warranty of
++    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++    GNU General Public License for more details.
++ 
++    You should have received a copy of the GNU General Public License
++    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
++ 
++ #include "defs.h"
++ #include "target.h"
++ #include "value.h"
++ #include "gdbtypes.h"
++ #include "floatformat.h"
++ #include "gdbcore.h"
++ #include "frame.h"
++ #include "regcache.h"
++ #include "doublest.h"
++ #include "solib-svr4.h"
++ #include "osabi.h"
++ #include "regset.h"
++ #include "trad-frame.h"
++ #include "tramp-frame.h"
++ #include "breakpoint.h"
++ #include "auxv.h"
++ 
++ #include "arch/arm.h"
++ #include "arm-tdep.h"
++ #include "arm-none-tdep.h"
++ #include "glibc-tdep.h"
++ #include "arch-utils.h"
++ #include "inferior.h"
++ #include "gdbthread.h"
++ #include "symfile.h"
++ 
++ #include "cli/cli-utils.h"
++ #include "stap-probe.h"
++ #include "parser-defs.h"
++ #include "user-regs.h"
++ #include <ctype.h>
++ 
++ #include "elf-bfd.h"
++ #include "coff/internal.h"
++ #include "elf/arm.h"
++ 
++ #include "elf/common.h"
++ 
++ #define ARM_NONE_SIZEOF_NWFPE (8 * FP_REGISTER_SIZE \
++ 				+ 2 * INT_REGISTER_SIZE \
++ 				+ 8 + INT_REGISTER_SIZE)
++ 
++ /* The index to access CSPR in user_regs defined in GLIBC.  */
++ #define ARM_CPSR_GREGNUM 16
++ 
++ /* Support for register format used by the NWFPE FPA emulator.  Each
++    register takes three words, where either the first one, two, or
++    three hold a single, double, or extended precision value (depending
++    on the corresponding tag).  The register set is eight registers,
++    followed by the fpsr and fpcr, followed by eight tag bytes, and a
++    final word flag which indicates whether NWFPE has been
++    initialized.  */
++ 
++ #define NWFPE_FPSR_OFFSET (8 * FP_REGISTER_SIZE)
++ #define NWFPE_FPCR_OFFSET (NWFPE_FPSR_OFFSET + INT_REGISTER_SIZE)
++ #define NWFPE_TAGS_OFFSET (NWFPE_FPCR_OFFSET + INT_REGISTER_SIZE)
++ #define NWFPE_INITFLAG_OFFSET (NWFPE_TAGS_OFFSET + 8)
++ 
++ /* Reuse ARM GNU/Linux HWCAP values for none.  These are in defined in
++    <asm/elf.h> in current kernels.  */
++ #define HWCAP_VFP       64
++ #define HWCAP_IWMMXT    512
++ #define HWCAP_NEON      4096
++ #define HWCAP_VFPv3     8192
++ #define HWCAP_VFPv3D16  16384
++ 
++ extern int arm_apcs_32;
++ 
++ /* Core file and register set support.  */
++ 
++ #define ARM_NONE_SIZEOF_GREGSET (18 * INT_REGISTER_SIZE)
++ 
++ void
++ arm_none_supply_gregset (const struct regset *regset,
++ 			  struct regcache *regcache,
++ 			  int regnum, const void *gregs_buf, size_t len)
++ {
++   struct gdbarch *gdbarch = get_regcache_arch (regcache);
++   enum bfd_endian byte_order = gdbarch_byte_order (gdbarch);
++   const gdb_byte *gregs = (const gdb_byte *) gregs_buf;
++   int regno;
++   CORE_ADDR reg_pc;
++   gdb_byte pc_buf[INT_REGISTER_SIZE];
++ 
++   for (regno = ARM_A1_REGNUM; regno < ARM_PC_REGNUM; regno++)
++     if (regnum == -1 || regnum == regno)
++       regcache_raw_supply (regcache, regno,
++ 			   gregs + INT_REGISTER_SIZE * regno);
++ 
++   if (regnum == ARM_PS_REGNUM || regnum == -1)
++     {
++       if (arm_apcs_32)
++ 	regcache_raw_supply (regcache, ARM_PS_REGNUM,
++ 			     gregs + INT_REGISTER_SIZE * ARM_CPSR_GREGNUM);
++       else
++ 	regcache_raw_supply (regcache, ARM_PS_REGNUM,
++ 			     gregs + INT_REGISTER_SIZE * ARM_PC_REGNUM);
++     }
++ 
++   if (regnum == ARM_PC_REGNUM || regnum == -1)
++     {
++       reg_pc = extract_unsigned_integer (gregs
++ 					 + INT_REGISTER_SIZE * ARM_PC_REGNUM,
++ 					 INT_REGISTER_SIZE, byte_order);
++       reg_pc = gdbarch_addr_bits_remove (gdbarch, reg_pc);
++       store_unsigned_integer (pc_buf, INT_REGISTER_SIZE, byte_order, reg_pc);
++       regcache_raw_supply (regcache, ARM_PC_REGNUM, pc_buf);
++     }
++ }
++ 
++ void
++ arm_none_collect_gregset (const struct regset *regset,
++ 			   const struct regcache *regcache,
++ 			   int regnum, void *gregs_buf, size_t len)
++ {
++   gdb_byte *gregs = (gdb_byte *) gregs_buf;
++   int regno;
++ 
++   for (regno = ARM_A1_REGNUM; regno < ARM_PC_REGNUM; regno++)
++     if (regnum == -1 || regnum == regno)
++       regcache_raw_collect (regcache, regno,
++ 			    gregs + INT_REGISTER_SIZE * regno);
++ 
++   if (regnum == ARM_PS_REGNUM || regnum == -1)
++     {
++       if (arm_apcs_32)
++ 	regcache_raw_collect (regcache, ARM_PS_REGNUM,
++ 			      gregs + INT_REGISTER_SIZE * ARM_CPSR_GREGNUM);
++       else
++ 	regcache_raw_collect (regcache, ARM_PS_REGNUM,
++ 			      gregs + INT_REGISTER_SIZE * ARM_PC_REGNUM);
++     }
++ 
++   if (regnum == ARM_PC_REGNUM || regnum == -1)
++     regcache_raw_collect (regcache, ARM_PC_REGNUM,
++ 			  gregs + INT_REGISTER_SIZE * ARM_PC_REGNUM);
++ }
++ 
++ /* Support for register format used by the NWFPE FPA emulator.  */
++ 
++ #define typeNone		0x00
++ #define typeSingle		0x01
++ #define typeDouble		0x02
++ #define typeExtended		0x03
++ 
++ void
++ arm_none_supply_nwfpe_register (struct regcache *regcache, int regno,
++ 				const gdb_byte *regs)
++ {
++   const gdb_byte *reg_data;
++   gdb_byte reg_tag;
++   gdb_byte buf[FP_REGISTER_SIZE];
++ 
++   reg_data = regs + (regno - ARM_F0_REGNUM) * FP_REGISTER_SIZE;
++   reg_tag = regs[(regno - ARM_F0_REGNUM) + NWFPE_TAGS_OFFSET];
++   memset (buf, 0, FP_REGISTER_SIZE);
++ 
++   switch (reg_tag)
++     {
++     case typeSingle:
++       memcpy (buf, reg_data, 4);
++       break;
++     case typeDouble:
++       memcpy (buf, reg_data + 4, 4);
++       memcpy (buf + 4, reg_data, 4);
++       break;
++     case typeExtended:
++       /* We want sign and exponent, then least significant bits,
++ 	 then most significant.  NWFPE does sign, most, least.  */
++       memcpy (buf, reg_data, 4);
++       memcpy (buf + 4, reg_data + 8, 4);
++       memcpy (buf + 8, reg_data + 4, 4);
++       break;
++     default:
++       break;
++     }
++ 
++   regcache_raw_supply (regcache, regno, buf);
++ }
++ 
++ void
++ arm_none_collect_nwfpe_register (const struct regcache *regcache, int regno,
++ 				 gdb_byte *regs)
++ {
++   gdb_byte *reg_data;
++   gdb_byte reg_tag;
++   gdb_byte buf[FP_REGISTER_SIZE];
++ 
++   regcache_raw_collect (regcache, regno, buf);
++ 
++   /* NOTE drow/2006-06-07: This code uses the tag already in the
++      register buffer.  I've preserved that when moving the code
++      from the native file to the target file.  But this doesn't
++      always make sense.  */
++ 
++   reg_data = regs + (regno - ARM_F0_REGNUM) * FP_REGISTER_SIZE;
++   reg_tag = regs[(regno - ARM_F0_REGNUM) + NWFPE_TAGS_OFFSET];
++ 
++   switch (reg_tag)
++     {
++     case typeSingle:
++       memcpy (reg_data, buf, 4);
++       break;
++     case typeDouble:
++       memcpy (reg_data, buf + 4, 4);
++       memcpy (reg_data + 4, buf, 4);
++       break;
++     case typeExtended:
++       memcpy (reg_data, buf, 4);
++       memcpy (reg_data + 4, buf + 8, 4);
++       memcpy (reg_data + 8, buf + 4, 4);
++       break;
++     default:
++       break;
++     }
++ }
++ 
++ void
++ arm_none_supply_nwfpe (const struct regset *regset,
++ 			struct regcache *regcache,
++ 			int regnum, const void *regs_buf, size_t len)
++ {
++   const gdb_byte *regs = (const gdb_byte *) regs_buf;
++   int regno;
++ 
++   if (regnum == ARM_FPS_REGNUM || regnum == -1)
++     regcache_raw_supply (regcache, ARM_FPS_REGNUM,
++ 			 regs + NWFPE_FPSR_OFFSET);
++ 
++   for (regno = ARM_F0_REGNUM; regno <= ARM_F7_REGNUM; regno++)
++     if (regnum == -1 || regnum == regno)
++       arm_none_supply_nwfpe_register (regcache, regno, regs);
++ }
++ 
++ void
++ arm_none_collect_nwfpe (const struct regset *regset,
++ 			 const struct regcache *regcache,
++ 			 int regnum, void *regs_buf, size_t len)
++ {
++   gdb_byte *regs = (gdb_byte *) regs_buf;
++   int regno;
++ 
++   for (regno = ARM_F0_REGNUM; regno <= ARM_F7_REGNUM; regno++)
++     if (regnum == -1 || regnum == regno)
++       arm_none_collect_nwfpe_register (regcache, regno, regs);
++ 
++   if (regnum == ARM_FPS_REGNUM || regnum == -1)
++     regcache_raw_collect (regcache, ARM_FPS_REGNUM,
++ 			  regs + INT_REGISTER_SIZE * ARM_FPS_REGNUM);
++ }
++ 
++ /* Support VFP register format.  */
++ 
++ #define ARM_NONE_SIZEOF_VFP (32 * 8 + 4)
++ 
++ static void
++ arm_none_supply_vfp (const struct regset *regset,
++ 		      struct regcache *regcache,
++ 		      int regnum, const void *regs_buf, size_t len)
++ {
++   const gdb_byte *regs = (const gdb_byte *) regs_buf;
++   int regno;
++ 
++   if (regnum == ARM_FPSCR_REGNUM || regnum == -1)
++     regcache_raw_supply (regcache, ARM_FPSCR_REGNUM, regs + 32 * 8);
++ 
++   for (regno = ARM_D0_REGNUM; regno <= ARM_D31_REGNUM; regno++)
++     if (regnum == -1 || regnum == regno)
++       regcache_raw_supply (regcache, regno,
++ 			   regs + (regno - ARM_D0_REGNUM) * 8);
++ }
++ 
++ static void
++ arm_none_collect_vfp (const struct regset *regset,
++ 			 const struct regcache *regcache,
++ 			 int regnum, void *regs_buf, size_t len)
++ {
++   gdb_byte *regs = (gdb_byte *) regs_buf;
++   int regno;
++ 
++   if (regnum == ARM_FPSCR_REGNUM || regnum == -1)
++     regcache_raw_collect (regcache, ARM_FPSCR_REGNUM, regs + 32 * 8);
++ 
++   for (regno = ARM_D0_REGNUM; regno <= ARM_D31_REGNUM; regno++)
++     if (regnum == -1 || regnum == regno)
++       regcache_raw_collect (regcache, regno,
++ 			    regs + (regno - ARM_D0_REGNUM) * 8);
++ }
++ 
++ static const struct regset arm_none_gregset =
++   {
++     NULL, arm_none_supply_gregset, arm_none_collect_gregset
++   };
++ 
++ static const struct regset arm_none_fpregset =
++   {
++     NULL, arm_none_supply_nwfpe, arm_none_collect_nwfpe
++   };
++ 
++ static const struct regset arm_none_vfpregset =
++   {
++     NULL, arm_none_supply_vfp, arm_none_collect_vfp
++   };
++ 
++ /* Iterate over core file register note sections.  */
++ 
++ static void
++ arm_none_iterate_over_regset_sections (struct gdbarch *gdbarch,
++ 					iterate_over_regset_sections_cb *cb,
++ 					void *cb_data,
++ 					const struct regcache *regcache)
++ {
++   struct gdbarch_tdep *tdep = gdbarch_tdep (gdbarch);
++ 
++   cb (".reg", ARM_NONE_SIZEOF_GREGSET, &arm_none_gregset, NULL, cb_data);
++ 
++   if (tdep->vfp_register_count > 0)
++     cb (".reg-arm-vfp", ARM_NONE_SIZEOF_VFP, &arm_none_vfpregset,
++ 	"VFP floating-point", cb_data);
++   else if (tdep->have_fpa_registers)
++     cb (".reg2", ARM_NONE_SIZEOF_NWFPE, &arm_none_fpregset,
++ 	"FPA floating-point", cb_data);
++ }
++ 
++ /* Determine target description from core file.  */
++ 
++ static const struct target_desc *
++ arm_none_core_read_description (struct gdbarch *gdbarch,
++ 				struct target_ops *target,
++ 				bfd *abfd)
++ {
++   CORE_ADDR arm_hwcap = 0;
++ 
++   if (target_auxv_search (target, AT_HWCAP, &arm_hwcap) != 1)
++     return NULL;
++ 
++   if (arm_hwcap & HWCAP_VFP)
++     {
++       /* NEON implies VFPv3-D32 or no-VFP unit.  Say that we only support
++          Neon with VFPv3-D32.  */
++       if (arm_hwcap & HWCAP_NEON)
++ 	return tdesc_arm_with_neon;
++       else if ((arm_hwcap & (HWCAP_VFPv3 | HWCAP_VFPv3D16)) == HWCAP_VFPv3)
++ 	return tdesc_arm_with_vfpv3;
++       else
++ 	return tdesc_arm_with_vfpv2;
++     }
++ 
++   return NULL;
++ }
++ 
++ /* Generate corefile notes for SPU contexts.  */
++ 
++ static char *
++ arm_spu_make_corefile_notes (bfd *obfd, char *note_data, int *note_size)
++ {
++   static const char *spu_files[] =
++     {
++       "object-id",
++       "mem",
++       "regs",
++       "fpcr",
++       "lslr",
++       "decr",
++       "decr_status",
++       "signal1",
++       "signal1_type",
++       "signal2",
++       "signal2_type",
++       "event_mask",
++       "event_status",
++       "mbox_info",
++       "ibox_info",
++       "wbox_info",
++       "dma_info",
++       "proxydma_info",
++    };
++ 
++   enum bfd_endian byte_order = gdbarch_byte_order (target_gdbarch ());
++   gdb_byte *spu_ids;
++   LONGEST i, j, size;
++ 
++   /* Determine list of SPU ids.  */
++   size = target_read_alloc (&current_target, TARGET_OBJECT_SPU,
++ 			    NULL, &spu_ids);
++ 
++   /* Generate corefile notes for each SPU file.  */
++   for (i = 0; i < size; i += 4)
++     {
++       int fd = extract_unsigned_integer (spu_ids + i, 4, byte_order);
++ 
++       for (j = 0; j < sizeof (spu_files) / sizeof (spu_files[0]); j++)
++ 	{
++ 	  char annex[32], note_name[32];
++ 	  gdb_byte *spu_data;
++ 	  LONGEST spu_len;
++ 
++ 	  xsnprintf (annex, sizeof annex, "%d/%s", fd, spu_files[j]);
++ 	  spu_len = target_read_alloc (&current_target, TARGET_OBJECT_SPU,
++ 				       annex, &spu_data);
++ 	  if (spu_len > 0)
++ 	    {
++ 	      xsnprintf (note_name, sizeof note_name, "SPU/%s", annex);
++ 	      note_data = elfcore_write_note (obfd, note_data, note_size,
++ 					      note_name, NT_SPU,
++ 					      spu_data, spu_len);
++ 	      xfree (spu_data);
++ 
++ 	      if (!note_data)
++ 		{
++ 		  xfree (spu_ids);
++ 		  return NULL;
++ 		}
++ 	    }
++ 	}
++     }
++ 
++   if (size > 0)
++     xfree (spu_ids);
++ 
++   return note_data;
++ }
++ 
++ /* Structure for passing information from
++    arm_none_collect_thread_registers via an iterator to
++    arm_none_collect_regset_section_cb. */
++ 
++ struct arm_none_collect_regset_section_cb_data
++ {
++   struct gdbarch *gdbarch;
++   const struct regcache *regcache;
++   bfd *obfd;
++   char *note_data;
++   int *note_size;
++   unsigned long lwp;
++   enum gdb_signal stop_signal;
++   int abort_iteration;
++ };
++ 
++ /* Callback for iterate_over_regset_sections that records a single
++    regset in the corefile note section.  */
++ 
++ static void
++ arm_none_collect_regset_section_cb (const char *sect_name, int size,
++ 				 const struct regset *regset,
++ 				 const char *human_name, void *cb_data)
++ {
++   char *buf;
++   struct arm_none_collect_regset_section_cb_data *data
++     = (struct arm_none_collect_regset_section_cb_data *) cb_data;
++ 
++   if (data->abort_iteration)
++     return;
++ 
++   gdb_assert (regset && regset->collect_regset);
++ 
++   buf = (char *) xmalloc (size);
++   regset->collect_regset (regset, data->regcache, -1, buf, size);
++ 
++   /* PRSTATUS still needs to be treated specially.  */
++   if (strcmp (sect_name, ".reg") == 0)
++     data->note_data = (char *) elfcore_write_prstatus
++       (data->obfd, data->note_data, data->note_size, data->lwp,
++        gdb_signal_to_host (data->stop_signal), buf);
++   else
++     data->note_data = (char *) elfcore_write_register_note
++       (data->obfd, data->note_data, data->note_size,
++        sect_name, buf, size);
++   xfree (buf);
++ 
++   if (data->note_data == NULL)
++     data->abort_iteration = 1;
++ }
++ 
++ /* Records the thread's register state for the corefile note
++    section.  */
++ 
++ static char *
++ arm_none_collect_thread_registers (const struct regcache *regcache,
++ 				ptid_t ptid, bfd *obfd,
++ 				char *note_data, int *note_size,
++ 				enum gdb_signal stop_signal)
++ {
++   struct gdbarch *gdbarch = get_regcache_arch (regcache);
++   struct arm_none_collect_regset_section_cb_data data;
++ 
++   data.gdbarch = gdbarch;
++   data.regcache = regcache;
++   data.obfd = obfd;
++   data.note_data = note_data;
++   data.note_size = note_size;
++   data.stop_signal = stop_signal;
++   data.abort_iteration = 0;
++ 
++   /* For remote targets the LWP may not be available, so use the TID.  */
++   data.lwp = ptid_get_lwp (ptid);
++   if (!data.lwp)
++     data.lwp = ptid_get_tid (ptid);
++ 
++   gdbarch_iterate_over_regset_sections (gdbarch,
++ 					arm_none_collect_regset_section_cb,
++ 					&data, regcache);
++   return data.note_data;
++ }
++ 
++ /* Fills the "to_make_corefile_note" target vector.  Builds the note
++    section for a corefile, and returns it in a malloc buffer.  */
++ 
++ char *
++ arm_none_make_corefile_notes (struct gdbarch *gdbarch, bfd *obfd, int *note_size,
++ 			      arm_none_collect_thread_registers_ftype collect)
++ {
++   char *note_data = NULL;
++ 
++   /* Process information.  */
++   if (get_exec_file (0))
++     {
++       const char *fname = lbasename (get_exec_file (0));
++       char *psargs = xstrdup (fname);
++ 
++       if (get_inferior_args ())
++         psargs = reconcat (psargs, psargs, " ", get_inferior_args (),
++ 			   (char *) NULL);
++ 
++       note_data = elfcore_write_prpsinfo (obfd, note_data, note_size,
++                                           fname, psargs);
++       xfree (psargs);
++     }
++ 
++   if (!note_data)
++     return NULL;
++ 
++   if (note_data)
++     {
++       gdb_byte *auxv;
++       int auxv_len;
++ 
++       ptid_t ptid;
++       struct regcache *regcache;
++ 
++       /* Assume thread 1 only for none target */
++       ptid = global_thread_id_to_ptid (1);
++       regcache = get_thread_arch_regcache (ptid, gdbarch);
++ 
++       note_data = collect (regcache,
++ 			   ptid,
++ 			   obfd,
++ 			   note_data,
++ 			   note_size,
++ 			   GDB_SIGNAL_0);
++       if (!note_data)
++ 	return NULL;
++       
++       /* Auxillary vector.  */
++       auxv_len = target_read_alloc (&current_target, TARGET_OBJECT_AUXV,
++ 				    NULL, &auxv);
++       if (auxv_len > 0)
++ 	{
++ 	  note_data = elfcore_write_note (obfd, note_data, note_size,
++ 					  "CORE", NT_AUXV, auxv, auxv_len);
++ 	  xfree (auxv);
++ 	  
++ 	  if (!note_data)
++ 	    return NULL;
++ 	}
++ 
++       /* SPU information.  */
++       note_data = arm_spu_make_corefile_notes (obfd, note_data, note_size);
++       if (!note_data)
++ 	return NULL;
++     }
++ 
++   make_cleanup (xfree, note_data);
++   return note_data;
++ }
++ 
++ static char *
++ arm_none_make_corefile_notes_1 (struct gdbarch *gdbarch, bfd *obfd, int *note_size)
++ {
++   return arm_none_make_corefile_notes (gdbarch, obfd, note_size,
++ 					 arm_none_collect_thread_registers);
++ }
++ 
++ /* Setup default core file support for ARM none targets.
++    Can be overridden later by OSABI.  */
++ 
++ void
++ arm_none_init_corefile (struct gdbarch_info info,
++ 			struct gdbarch *gdbarch)
++ {
++   struct gdbarch_tdep *tdep = gdbarch_tdep (gdbarch);
++ 
++   set_gdbarch_make_corefile_notes (gdbarch, arm_none_make_corefile_notes_1);
++ 
++   /* Default core file support.  */
++   set_gdbarch_iterate_over_regset_sections (gdbarch,
++ 					arm_none_iterate_over_regset_sections);
++   set_gdbarch_core_read_description (gdbarch, arm_none_core_read_description);
++ }
++ 
++ /* Provide a prototype to silence -Wmissing-prototypes.  */
++ extern initialize_file_ftype _initialize_arm_none_tdep;
++ 
++ void
++ _initialize_arm_none_tdep (void)
++ {
++   /* No special actions.  */
++ }
+diff -crB --new-file ../gdb-7.11.1-orig/gdb/arm-none-tdep.h ./gdb/arm-none-tdep.h
+*** ../gdb-7.11.1-orig/gdb/arm-none-tdep.h	1970-01-01 01:00:00.000000000 +0100
+--- ./gdb/arm-none-tdep.h	2016-07-27 14:29:07.347465650 +0200
+***************
+*** 0 ****
+--- 1,52 ----
++ /* GNU none on ARM target support, prototypes.
++ 
++    Copyright (C) 2016 Free Software Foundation, Inc.
++ 
++    This file is part of GDB.
++ 
++    This program is free software; you can redistribute it and/or modify
++    it under the terms of the GNU General Public License as published by
++    the Free Software Foundation; either version 3 of the License, or
++    (at your option) any later version.
++ 
++    This program is distributed in the hope that it will be useful,
++    but WITHOUT ANY WARRANTY; without even the implied warranty of
++    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++    GNU General Public License for more details.
++ 
++    You should have received a copy of the GNU General Public License
++    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
++ 
++ struct regset;
++ struct regcache;
++ 
++ void arm_none_supply_gregset (const struct regset *regset,
++ 			       struct regcache *regcache,
++ 			       int regnum, const void *gregs_buf, size_t len);
++ void arm_none_collect_gregset (const struct regset *regset,
++ 				const struct regcache *regcache,
++ 				int regnum, void *gregs_buf, size_t len);
++ 
++ void arm_none_supply_nwfpe_register (struct regcache *regcache, int regno,
++ 				     const gdb_byte *regs);
++ void arm_none_collect_nwfpe_register (const struct regcache *regcache, int regno,
++ 				      gdb_byte *regs);
++ 
++ void arm_none_supply_nwfpe (const struct regset *regset,
++ 			     struct regcache *regcache,
++ 			     int regnum, const void *regs_buf, size_t len);
++ void arm_none_collect_nwfpe (const struct regset *regset,
++ 			      const struct regcache *regcache,
++ 			      int regnum, void *regs_buf, size_t len);
++ 
++ typedef char *(*arm_none_collect_thread_registers_ftype) (const struct regcache *,
++ 							  ptid_t,
++ 							  bfd *, char *, int *,
++ 							  enum gdb_signal);
++ char *
++ arm_none_make_corefile_notes (struct gdbarch *gdbarch, bfd *obfd, int *note_size,
++ 			      arm_none_collect_thread_registers_ftype collect);
++ 
++ void
++ arm_none_init_corefile (struct gdbarch_info info,
++ 			struct gdbarch *gdbarch);
+diff -crB --new-file ../gdb-7.11.1-orig/gdb/arm-tdep.c ./gdb/arm-tdep.c
+*** ../gdb-7.11.1-orig/gdb/arm-tdep.c	2016-07-27 14:38:17.099475970 +0200
+--- ./gdb/arm-tdep.c	2016-07-28 10:35:08.336824126 +0200
+***************
+*** 48,53 ****
+--- 48,54 ----
+  #include "arch/arm.h"
+  #include "arch/arm-get-next-pcs.h"
+  #include "arm-tdep.h"
++ #include "arm-none-tdep.h"
+  #include "gdb/sim-arm.h"
+  
+  #include "elf-bfd.h"
+***************
+*** 469,477 ****
+  arm_addr_bits_remove (struct gdbarch *gdbarch, CORE_ADDR val)
+  {
+    /* On M-profile devices, do not strip the low bit from EXC_RETURN
+!      (the magic exception return address).  */
+    if (gdbarch_tdep (gdbarch)->is_m
+!       && (val & 0xfffffff0) == 0xfffffff0)
+      return val;
+  
+    if (arm_apcs_32)
+--- 470,480 ----
+  arm_addr_bits_remove (struct gdbarch *gdbarch, CORE_ADDR val)
+  {
+    /* On M-profile devices, do not strip the low bit from EXC_RETURN
+!      (the magic exception return address).
+!      According to B1.5.8 of the ARMv7-M Reference Manual the EXC_RETURN
+!      value is 0xF in Bits[31:28].  */
+    if (gdbarch_tdep (gdbarch)->is_m
+!       && (val & 0xf0000000) == 0xf0000000)
+      return val;
+  
+    if (arm_apcs_32)
+***************
+*** 2808,2821 ****
+    struct gdbarch *gdbarch = get_frame_arch (this_frame);
+    enum bfd_endian byte_order = gdbarch_byte_order (gdbarch);
+    struct arm_prologue_cache *cache;
+    CORE_ADDR unwound_sp;
+    LONGEST xpsr;
+  
+    cache = FRAME_OBSTACK_ZALLOC (struct arm_prologue_cache);
+    cache->saved_regs = trad_frame_alloc_saved_regs (this_frame);
+  
+!   unwound_sp = get_frame_register_unsigned (this_frame,
+! 					    ARM_SP_REGNUM);
+  
+    /* The hardware saves eight 32-bit words, comprising xPSR,
+       ReturnAddress, LR (R14), R12, R3, R2, R1, R0.  See details in
+--- 2811,2869 ----
+    struct gdbarch *gdbarch = get_frame_arch (this_frame);
+    enum bfd_endian byte_order = gdbarch_byte_order (gdbarch);
+    struct arm_prologue_cache *cache;
++   CORE_ADDR lr;
++   CORE_ADDR sp;
+    CORE_ADDR unwound_sp;
+    LONGEST xpsr;
++   uint32_t main_stack_used;
++   uint32_t extended_frame_used;
+  
+    cache = FRAME_OBSTACK_ZALLOC (struct arm_prologue_cache);
+    cache->saved_regs = trad_frame_alloc_saved_regs (this_frame);
+  
+!   /* ARMv7-M Architecture Reference "B1.5.6 Exception entry behavior"
+!      describes which bits in LR that define which stack was used prior
+!      to the exception and if FPU is used (causing extended stack frame).  */
+! 
+!   lr = get_frame_register_unsigned (this_frame, ARM_LR_REGNUM);
+!   sp = get_frame_register_unsigned (this_frame, ARM_SP_REGNUM);
+! 
+!   /* Check if main stack was used.  */
+!   main_stack_used = ((lr & 0xf) != 0xd);
+!   if (main_stack_used)
+!     {
+!       /* Main stack used, use MSP as SP.  */
+!       unwound_sp = sp;
+!     }
+!   else
+!     {
+!       /* Thread (process) stack used.
+! 	     Potentially this could be other register defined by target, but PSP
+! 	     can be considered a standard name for the "Process Stack Pointer".
+! 	     To be fully aware of system registers like MSP and PSP, these could
+! 	     be added to a separate XML arm-m-system-profile that is valid for
+! 	     ARMv6-M and ARMv7-M architectures. Also to be able to debug eg a
+! 	     corefile off-line, then these registers must be defined by GDB,
+! 	     and also be included in the corefile regsets.  */
+! 
+!       int psp_regnum = user_reg_map_name_to_regnum (gdbarch, "psp", -1);
+!       if (psp_regnum == -1)
+! 	    {
+! 		  /* Thread (process) stack could not be fetched,
+! 		     give warning and exit.  */
+! 
+! 		  warning (_("no PSP thread stack unwinding supported, exiting."));
+! 
+! 		  /* Terminate any further stack unwinding by refer to self.  */
+! 		  cache->prev_sp = sp;
+! 		  return cache;
+! 	    }
+!       else
+! 	    {
+! 	      /* Thread (process) stack used, use PSP as SP.  */
+! 	      unwound_sp = get_frame_register_unsigned (this_frame, psp_regnum);
+! 	    }
+!     }
+  
+    /* The hardware saves eight 32-bit words, comprising xPSR,
+       ReturnAddress, LR (R14), R12, R3, R2, R1, R0.  See details in
+***************
+*** 2825,2839 ****
+    cache->saved_regs[1].addr = unwound_sp + 4;
+    cache->saved_regs[2].addr = unwound_sp + 8;
+    cache->saved_regs[3].addr = unwound_sp + 12;
+!   cache->saved_regs[12].addr = unwound_sp + 16;
+!   cache->saved_regs[14].addr = unwound_sp + 20;
+!   cache->saved_regs[15].addr = unwound_sp + 24;
+    cache->saved_regs[ARM_PS_REGNUM].addr = unwound_sp + 28;
+  
+    /* If bit 9 of the saved xPSR is set, then there is a four-byte
+       aligner between the top of the 32-byte stack frame and the
+       previous context's stack pointer.  */
+-   cache->prev_sp = unwound_sp + 32;
+    if (safe_read_memory_integer (unwound_sp + 28, 4, byte_order, &xpsr)
+        && (xpsr & (1 << 9)) != 0)
+      cache->prev_sp += 4;
+--- 2873,2919 ----
+    cache->saved_regs[1].addr = unwound_sp + 4;
+    cache->saved_regs[2].addr = unwound_sp + 8;
+    cache->saved_regs[3].addr = unwound_sp + 12;
+!   cache->saved_regs[ARM_IP_REGNUM].addr = unwound_sp + 16;
+!   cache->saved_regs[ARM_LR_REGNUM].addr = unwound_sp + 20;
+!   cache->saved_regs[ARM_PC_REGNUM].addr = unwound_sp + 24;
+    cache->saved_regs[ARM_PS_REGNUM].addr = unwound_sp + 28;
+  
++   /* Check if extended stack frame (FPU regs stored) was used.  */
++   extended_frame_used = ((lr & (1 << 4)) == 0);
++   if (extended_frame_used)
++     {
++ 	  int i;
++ 	  int fpu_regs_stack_offset;
++ 
++ 	  /* This code does not take into account the lazy stacking, see "Lazy
++ 	     context save of FP state", in B1.5.7, also ARM AN298, supported
++ 	     by Cortex-M4F architecture. Give a warning and try do best effort.
++ 	     To fully handle this the FPCCR register (Floating-point Context
++ 	     Control Register) needs to be read out and the bits ASPEN and LSPEN
++ 	     could be checked to setup correct lazy stacked FP registers.  */
++ 
++ 	  warning (_("no FPU lazy stack unwinding supported, check FPCCR."));
++ 
++ 	  fpu_regs_stack_offset = unwound_sp + 0x20;
++ 	  for (i = 0; i < 16; i++)
++ 	    {
++ 	      cache->saved_regs[ARM_D0_REGNUM + i].addr = fpu_regs_stack_offset;
++ 	      fpu_regs_stack_offset += 4;
++ 	    }
++ 	  cache->saved_regs[ARM_FPSCR_REGNUM].addr = unwound_sp + 0x60;
++ 
++ 	  /* Offset 0x64 is reserved.  */
++ 	  cache->prev_sp = unwound_sp + 0x68;
++     }
++   else
++     {
++       /* Basic frame type used.  */
++       cache->prev_sp = unwound_sp + 32;
++     }
++ 
+    /* If bit 9 of the saved xPSR is set, then there is a four-byte
+       aligner between the top of the 32-byte stack frame and the
+       previous context's stack pointer.  */
+    if (safe_read_memory_integer (unwound_sp + 28, 4, byte_order, &xpsr)
+        && (xpsr & (1 << 9)) != 0)
+      cache->prev_sp += 4;
+***************
+*** 2884,2889 ****
+--- 2964,3004 ----
+  				       prev_regnum);
+  }
+  
++ /* Determine if the program counter specified equals any of
++   these magic return values defined by v7-M architecture. */
++ 
++ static int
++ arm_m_pc_is_magic (CORE_ADDR pc)
++ {
++   /* Exception frames return to one of these magic PCs defined in v7-M.
++      For more details see "B1.5.8 Exception return behavior"
++      in "ARMv7-M Architecture Reference Manual".  */
++   switch (pc)
++     {
++       /* From Table B1-8 and B1-9 the EXC_RETURN definition of
++          the exception return behavior.  */
++ 
++       /* Return to Handler mode. Return stack Main. Frame type Extended.  */
++       case 0xffffffe1:
++       /* Return to Thread mode. Return stack Main. Frame type Extended.  */
++       case 0xffffffe9:
++       /* Return to Thread mode. Return stack Process. Frame type Extended.  */
++       case 0xffffffed:
++       /* Return to Handler mode. Return stack Main. Frame type Basic.  */
++       case 0xfffffff1:
++       /* Return to Thread mode. Return stack Main. Frame type Basic.  */
++       case 0xfffffff9:
++       /* Return to Thread mode. Return stack Process. Frame type Basic.  */
++       case 0xfffffffd:
++         /* PC is magic.  */
++         return 1;
++ 
++       default:
++         /* PC is not magic.  */
++         return 0;
++     }
++ }
++ 
+  /* Implementation of function hook 'sniffer' in
+     'struct frame_uwnind'.  */
+  
+***************
+*** 2897,2910 ****
+    /* No need to check is_m; this sniffer is only registered for
+       M-profile architectures.  */
+  
+!   /* Exception frames return to one of these magic PCs.  Other values
+!      are not defined as of v7-M.  See details in "B1.5.8 Exception
+!      return behavior" in "ARMv7-M Architecture Reference Manual".  */
+!   if (this_pc == 0xfffffff1 || this_pc == 0xfffffff9
+!       || this_pc == 0xfffffffd)
+!     return 1;
+! 
+!   return 0;
+  }
+  
+  /* Frame unwinder for M-profile exceptions.  */
+--- 3012,3019 ----
+    /* No need to check is_m; this sniffer is only registered for
+       M-profile architectures.  */
+  
+!   /* Check if exception frame returns to a magic PC value.  */
+!   return arm_m_pc_is_magic (this_pc);
+  }
+  
+  /* Frame unwinder for M-profile exceptions.  */
+***************
+*** 9305,9310 ****
+--- 9414,9422 ----
+    /* Virtual tables.  */
+    set_gdbarch_vbit_in_delta (gdbarch, 1);
+  
++   /* Default core file support, can be overridden by osabi. */
++   arm_none_init_corefile (info, gdbarch);
++ 
+    /* Hook in the ABI-specific overrides, if they have been registered.  */
+    gdbarch_init_osabi (info, gdbarch);
+  
+diff -crB --new-file ../gdb-7.11.1-orig/gdb/configure.tgt ./gdb/configure.tgt
+*** ../gdb-7.11.1-orig/gdb/configure.tgt	2016-07-27 14:38:17.207475972 +0200
+--- ./gdb/configure.tgt	2016-07-27 14:33:00.203470021 +0200
+***************
+*** 112,118 ****
+  	;;
+  arm*-*-*)
+  	# Target: ARM embedded system
+! 	gdb_target_obs="arm.o arm-get-next-pcs.o arm-tdep.o"
+  	gdb_sim=../sim/arm/libsim.a
+  	;;
+  
+--- 112,118 ----
+  	;;
+  arm*-*-*)
+  	# Target: ARM embedded system
+! 	gdb_target_obs="arm.o arm-get-next-pcs.o arm-tdep.o arm-none-tdep.o"
+  	gdb_sim=../sim/arm/libsim.a
+  	;;
+  
+***************
+*** 724,727 ****
+--- 724,730 ----
+    if test "$t" = linux-tdep.o; then
+      gdb_have_gcore=true
+    fi
++   if test "$t" = arm-none-tdep.o; then
++     gdb_have_gcore=true
++   fi
+  done
