@@ -44,7 +44,7 @@
 # Some packages possibly needed:
 #   libz-dev
 #   libgmp-dev
-#   libgpc-dev
+#   libmpc-dev
 #   libmpfr-dev
 #   libboost-all-dev
 # GDB also might use
@@ -68,10 +68,10 @@ set -e
 TARGET_DEFAULT=arm-none-eabi
 LANGUAGES_DEFAULT=c,c++
 
-BINUTILS_VERSION_DEFAULT=2.26.1
-GCC_VERSION_DEFAULT=6.1.0
-NEWLIB_VERSION_DEFAULT=2.4.0
-GDB_VERSION_DEFAULT=7.11.1
+BINUTILS_VERSION_DEFAULT=2.27
+GCC_VERSION_DEFAULT=6.3.0
+NEWLIB_VERSION_DEFAULT=2.5.0
+GDB_VERSION_DEFAULT=7.12
 
 DEST_PATH_DEFAULT="/usr/local/gcc"
 DEST_PATH_SUFFIX_DEFAULT=""
