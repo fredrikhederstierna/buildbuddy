@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# GNU Toolchain Build Buddy v1.0.3
+# GNU Toolchain Build Buddy v1.0.4
 #
 # Simple wizard to download, configure and build the GNU toolchain
 # targeting especially bare-metal cross-compilers for embedded systems.
 #
-# Written by Fredrik Hederstierna 2015
+# Written by Fredrik Hederstierna 2015/2016
 #
 # This is free and unencumbered software released into the public domain.
 #
@@ -39,6 +39,7 @@
 # 1.0.1  Fix that GDB prior to 7.8 used bz2 not xz as compressor.
 # 1.0.2  Fix that GDB version sorting handles that 7.9 < 7.10.
 # 1.0.3  Updated corefile patch for GDB version 7.11.1.
+# 1.0.4  Added optional WGET proxy settings for HTTP and FTP.
 #
 
 # Some packages possibly needed:
@@ -85,9 +86,16 @@ DOWNLOAD_NEWLIB_SERVER="ftp://sourceware.org/pub/newlib"
 
 GDB_ARCH_SUFFIX=""
 
+# Extra proxy settings if needed for wget
+
+WGET_HTTP_PROXY_EXTRA=""
+#WGET_HTTP_PROXY_EXTRA="-e use_proxy=yes -e http_proxy=127.0.0.1:8080"
+WGET_FTP_PROXY_EXTRA=""
+#WGET_FTP_PROXY_EXTRA="-e use_proxy=yes -e ftp_proxy=127.0.0.1:8080"
+
 # Get user input what to build
 
-printf "GNU Toolchain BuildBuddy v1.0.3\n"
+printf "GNU Toolchain BuildBuddy v1.0.4\n"
 printf "Enter information what you want to build:\n"
 
 # Choose target
@@ -228,21 +236,21 @@ umask 022
 
 if [ ! -f  ${BINUTILS_SRC_FILE} ]; then
   echo -e Downloading: $BINUTILS_SRC_FILE
-  wget $DOWNLOAD_GNU_SERVER/binutils/$BINUTILS_SRC_FILE
+  wget $WGET_HTTP_PROXY_EXTRA $DOWNLOAD_GNU_SERVER/binutils/$BINUTILS_SRC_FILE
 fi
 
 # Check and Download GCC
 
 if [ ! -f  ${GCC_SRC_FILE} ]; then
   echo -e Downloading: $GCC_SRC_FILE
-  wget $DOWNLOAD_GNU_SERVER/gcc/gcc-$GCC_VERSION/$GCC_SRC_FILE
+  wget $WGET_HTTP_PROXY_EXTRA $DOWNLOAD_GNU_SERVER/gcc/gcc-$GCC_VERSION/$GCC_SRC_FILE
 fi
 
 # Check and Download Newlib
 
 if [ ! -f  ${NEWLIB_SRC_FILE} ]; then
   echo -e Downloading: $NEWLIB_SRC_FILE
-  wget $DOWNLOAD_NEWLIB_SERVER/$NEWLIB_SRC_FILE
+  wget $WGET_FTP_PROXY_EXTRA $DOWNLOAD_NEWLIB_SERVER/$NEWLIB_SRC_FILE
 fi
 
 if [[ $BUILD_GDB == "Yes" ]]
@@ -250,7 +258,7 @@ then
   # Check and Download GDB
   if [ ! -f  ${GDB_SRC_FILE} ]; then
     echo -e Downloading: $GDB_SRC_FILE
-    wget $DOWNLOAD_GNU_SERVER/gdb/$GDB_SRC_FILE
+    wget $WGET_HTTP_PROXY_EXTRA $DOWNLOAD_GNU_SERVER/gdb/$GDB_SRC_FILE
   fi
 fi
 
