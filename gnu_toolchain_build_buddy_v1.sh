@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# GNU Toolchain Build Buddy v1.0.4
+# GNU Toolchain Build Buddy v1.0.5
 #
 # Simple wizard to download, configure and build the GNU toolchain
 # targeting especially bare-metal cross-compilers for embedded systems.
 #
-# Written by Fredrik Hederstierna 2015/2016
+# Written by Fredrik Hederstierna 2015/2016/2017
 #
 # This is free and unencumbered software released into the public domain.
 #
@@ -40,6 +40,11 @@
 # 1.0.2  Fix that GDB version sorting handles that 7.9 < 7.10.
 # 1.0.3  Updated corefile patch for GDB version 7.11.1.
 # 1.0.4  Added optional WGET proxy settings for HTTP and FTP.
+# 1.0.5  Removed Guile support in GDB --with-guile=no
+#        (https://sourceware.org/bugzilla/show_bug.cgi?id=21104)
+#        Disable generation of docs in GDB: MAKEINFO=true
+#        Parallelize make with --jobs=NCORE option.
+#        Print out time consumed for build diagnostics.
 #
 
 # Some packages possibly needed:
@@ -69,10 +74,10 @@ set -e
 TARGET_DEFAULT=arm-none-eabi
 LANGUAGES_DEFAULT=c,c++
 
-BINUTILS_VERSION_DEFAULT=2.27
-GCC_VERSION_DEFAULT=6.3.0
+BINUTILS_VERSION_DEFAULT=2.28
+GCC_VERSION_DEFAULT=7.1.0
 NEWLIB_VERSION_DEFAULT=2.5.0
-GDB_VERSION_DEFAULT=7.12
+GDB_VERSION_DEFAULT=7.12.1
 
 DEST_PATH_DEFAULT="/usr/local/gcc"
 DEST_PATH_SUFFIX_DEFAULT=""
@@ -93,9 +98,15 @@ WGET_HTTP_PROXY_EXTRA=""
 WGET_FTP_PROXY_EXTRA=""
 #WGET_FTP_PROXY_EXTRA="-e use_proxy=yes -e ftp_proxy=127.0.0.1:8080"
 
+# Get max CPU cores to parallelize make
+# If causes problems, just set NTHREAD=1
+
+NPROCESS=`getconf _NPROCESSORS_ONLN`
+NTHREAD=$(($NPROCESS*2))
+
 # Get user input what to build
 
-printf "GNU Toolchain BuildBuddy v1.0.4\n"
+printf "GNU Toolchain BuildBuddy v1.0.5\n"
 printf "Enter information what you want to build:\n"
 
 # Choose target
@@ -337,11 +348,19 @@ fi
 echo -e "All ready and done to go, starting compilation..."
 sleep 2
 
+# Create time stamp of build start, use internal bash SECONDS counter
+
+SECONDS=0
+TIMESTAMP_BUILD_TOTAL_START=$SECONDS
+
 # Build binutils
 
 cd build/binutils 
+TIMESTAMP_BUILD_BINUTILS_START=$SECONDS
 "../../$BINUTILS_DIR/configure" --target="$TARGET" --prefix="$DEST" --disable-nls
-make LDFLAGS=-s all install 
+make --jobs=$NTHREAD --max-load=$NTHREAD LDFLAGS=-s all
+make install
+TIMESTAMP_BUILD_BINUTILS_END=$SECONDS
 
 # Setup gcc build flags
 
@@ -369,17 +388,30 @@ fi
 
 cd ../gcc 
 PATH="$DEST/bin:$PATH" 
+TIMESTAMP_BUILD_GCC_START=$SECONDS
 "../../$GCC_DIR/configure" --enable-languages="$LANGUAGES" --target="$TARGET" --prefix="$DEST" $WITH_OPTS $TARGET_OPTS $WITH_FLOAT_OPTS $DISABLE_OPTS $ENABLE_OPTS
-make LDFLAGS=-s all all-gcc install install-gcc
+make --jobs=$NTHREAD --max-load=$NTHREAD LDFLAGS=-s all
+make --jobs=$NTHREAD --max-load=$NTHREAD LDFLAGS=-s all-gcc
+make install-gcc
+make install
+TIMESTAMP_BUILD_GCC_END=$SECONDS
 
 # Build gdb
 
 if [[ $BUILD_GDB == "Yes" ]]
 then
   cd ../gdb 
-  "../../$GDB_DIR/configure" --target="$TARGET" --prefix="$DEST"
-  make -w all install
+  TIMESTAMP_BUILD_GDB_START=$SECONDS
+  "../../$GDB_DIR/configure" --target="$TARGET" --prefix="$DEST" --with-guile=no
+  make --jobs=$NTHREAD --max-load=$NTHREAD --print-directory all MAKEINFO=true
+  make install
+  TIMESTAMP_BUILD_GDB_END=$SECONDS
 fi
+
+# All sources built
+
+TIMESTAMP_BUILD_TOTAL_END=$SECONDS
+echo -e "All done."
 
 # Remove uncompressed sources
 
@@ -390,7 +422,20 @@ then
   rm -fr "$GDB_DIR"
 fi
 
+# Print build statistics
+
+TIME_BINUTILS_TOTAL=$(( $TIMESTAMP_BUILD_BINUTILS_END - $TIMESTAMP_BUILD_BINUTILS_START ))
+echo "Build time Binutils: $(($TIME_BINUTILS_TOTAL / 3600)) hours, $((($TIME_BINUTILS_TOTAL / 60) % 60)) minutes and $(($TIME_BINUTILS_TOTAL % 60)) seconds."
+TIME_GCC_TOTAL=$(( $TIMESTAMP_BUILD_GCC_END - $TIMESTAMP_BUILD_GCC_START ))
+echo "Build time GCC     : $(($TIME_GCC_TOTAL / 3600)) hours, $((($TIME_GCC_TOTAL / 60) % 60)) minutes and $(($TIME_GCC_TOTAL % 60)) seconds."
+if [[ $BUILD_GDB == "Yes" ]]
+then
+  TIME_GDB_TOTAL=$(( $TIMESTAMP_BUILD_GDB_END - $TIMESTAMP_BUILD_GDB_START ))
+  echo "Build time GDB     : $(($TIME_GDB_TOTAL / 3600)) hours, $((($TIME_GDB_TOTAL / 60) % 60)) minutes and $(($TIME_GDB_TOTAL % 60)) seconds."
+fi
+TIME_TOTAL=$(( $TIMESTAMP_BUILD_TOTAL_END - $TIMESTAMP_BUILD_TOTAL_START ))
+echo "Build time Total  : $(($TIME_TOTAL / 3600)) hours, $((($TIME_TOTAL / 60) % 60)) minutes and $(($TIME_TOTAL % 60)) seconds."
+
 # Done
 
-echo -e "All done."
 echo -e "Toolchain built into dir: " $DEST
