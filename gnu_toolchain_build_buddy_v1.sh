@@ -48,6 +48,7 @@
 # 1.0.6  Attempt to make it possible to build older arm cross-gcc
 #        with target arm-elf like gcc-3.x. Seems like eabi gcc-4.x
 #        also has some issues to be built with versions < gcc-4.6.x.
+#        To build gcc-3.4.6, use TARGET=arm-thumb-elf, newlib-1.12.0.
 #
 
 # Some packages possibly needed:
@@ -395,10 +396,11 @@ then
   # Older gcc-3.4.6 do not use eabi, use arm-elf default abi
   if [[ $TARGET == *"eabi"* ]]
   then
-    ENABLE_MULTILIBS_OPTS="--enable-multilib"
+    EXTRA_TARGET_OPTS="--enable-multilib"
     WITH_ABI_OPTS="--with-mode=thumb --with-abi=aapcs --with-cpu=cortex-m4"
   else
-    WITH_ABI_OPTS=""
+    EXTRA_TARGET_OPTS="--enable-multilib --enable-targets=arm-elf"
+    WITH_ABI_OPTS="--with-cpu=arm7tdmi"
   fi
 
   if [[ $HARDFLOAT == "Yes" ]]
@@ -414,7 +416,7 @@ fi
 cd ../gcc 
 PATH="$DEST/bin:$PATH" 
 TIMESTAMP_BUILD_GCC_START=$SECONDS
-"../../$GCC_DIR/configure" --enable-languages="$LANGUAGES" --target="$TARGET" --prefix="$DEST" $WITH_OPTS $TARGET_OPTS $WITH_ABI_OPTS $WITH_FLOAT_OPTS $DISABLE_OPTS $ENABLE_MULTILIBS_OPTS $ENABLE_OPTS
+"../../$GCC_DIR/configure" --enable-languages="$LANGUAGES" --target="$TARGET" --prefix="$DEST" $WITH_OPTS $TARGET_OPTS $WITH_ABI_OPTS $WITH_FLOAT_OPTS $DISABLE_OPTS $EXTRA_TARGET_OPTS $ENABLE_OPTS
 make $PARALLEL_EXE LDFLAGS=-s all
 make $PARALLEL_EXE LDFLAGS=-s all-gcc
 make install-gcc
