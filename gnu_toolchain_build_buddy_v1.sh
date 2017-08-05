@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# GNU Toolchain Build Buddy v1.0.5
+# GNU Toolchain Build Buddy v1.0.6
 #
 # Simple wizard to download, configure and build the GNU toolchain
 # targeting especially bare-metal cross-compilers for embedded systems.
@@ -45,6 +45,9 @@
 #        Disable generation of docs in GDB: MAKEINFO=true
 #        Parallelize make with --jobs=NCORE option.
 #        Print out time consumed for build diagnostics.
+# 1.0.6  Attempt to make it possible to build older arm cross-gcc
+#        with target arm-elf like gcc-3.x. Seems like eabi gcc-4.x
+#        also has some issues to be built with versions < gcc-4.6.x.
 #
 
 # Some packages possibly needed:
@@ -64,6 +67,11 @@
 # BUGS:
 # Binutils 2.25.1 assembler does not support 'cortex-m7' cpu option.
 # https://bugs.archlinux.org/task/46951
+#
+# TODO:
+# * Make interactive optional, possible to input all parameters as arguments.
+# * Add more targets like avr, mips, msp430, i386 etc.
+#
 
 # Set shell to exit if error (to debug and dump output use -ex)
 
@@ -74,7 +82,7 @@ set -e
 TARGET_DEFAULT=arm-none-eabi
 LANGUAGES_DEFAULT=c,c++
 
-BINUTILS_VERSION_DEFAULT=2.28
+BINUTILS_VERSION_DEFAULT=2.29
 GCC_VERSION_DEFAULT=7.1.0
 NEWLIB_VERSION_DEFAULT=2.5.0
 GDB_VERSION_DEFAULT=7.12.1
@@ -99,14 +107,16 @@ WGET_FTP_PROXY_EXTRA=""
 #WGET_FTP_PROXY_EXTRA="-e use_proxy=yes -e ftp_proxy=127.0.0.1:8080"
 
 # Get max CPU cores to parallelize make
-# If causes problems, just set NTHREAD=1
+# If this causes problems, just set PARALLEL_EXE=""
+# Sometimes I've observed that gcc-build just stops too early without error
 
 NPROCESS=`getconf _NPROCESSORS_ONLN`
 NTHREAD=$(($NPROCESS*2))
+PARALLEL_EXE="--jobs=$NTHREAD --max-load=$NTHREAD"
 
 # Get user input what to build
 
-printf "GNU Toolchain BuildBuddy v1.0.5\n"
+printf "GNU Toolchain BuildBuddy v1.0.6\n"
 printf "Enter information what you want to build:\n"
 
 # Choose target
@@ -321,6 +331,12 @@ then
   # Add patches here to apply, example
   #( cd $GCC_DIR ; patch -p1 -i ../patches/0001-Regrename-pass-with-preferred-register.patch ; )
 
+  # Patch to make gcc-3.4.6 build with newer native gcc-4.x compiler
+  if [[ $GCC_VERSION == "3.4.6" ]]
+  then
+    ( cd $GCC_DIR ; patch -p1 -i ../patches/gcc-3.4.6-ocreatmode.patch ; )
+  fi
+
   # Patches for arm-none GDB corefile support
   if [[ $TARGET == *"arm"* ]]
   then
@@ -358,7 +374,7 @@ TIMESTAMP_BUILD_TOTAL_START=$SECONDS
 cd build/binutils 
 TIMESTAMP_BUILD_BINUTILS_START=$SECONDS
 "../../$BINUTILS_DIR/configure" --target="$TARGET" --prefix="$DEST" --disable-nls
-make --jobs=$NTHREAD --max-load=$NTHREAD LDFLAGS=-s all
+make $PARALLEL_EXE LDFLAGS=-s all
 make install
 TIMESTAMP_BUILD_BINUTILS_END=$SECONDS
 
@@ -366,7 +382,7 @@ TIMESTAMP_BUILD_BINUTILS_END=$SECONDS
 
 WITH_OPTS="--with-gnu-as --with-gnu-ld --with-newlib --with-system-zlib"
 DISABLE_OPTS="--disable-nls --disable-libssp"
-ENABLE_OPTS="--enable-multilib"
+ENABLE_OPTS=""
 
 # Target specific flags
 
@@ -374,7 +390,16 @@ ENABLE_OPTS="--enable-multilib"
 
 if [[ $TARGET == *"arm"* ]]
 then
-  TARGET_OPTS="--with-endian=little --with-abi=aapcs --disable-interwork --with-mode=thumb --with-cpu=cortex-m4"
+  TARGET_OPTS="--with-endian=little --disable-interwork"
+
+  # Older gcc-3.4.6 do not use eabi, use arm-elf default abi
+  if [[ $TARGET == *"eabi"* ]]
+  then
+    ENABLE_MULTILIBS_OPTS="--enable-multilib"
+    WITH_ABI_OPTS="--with-mode=thumb --with-abi=aapcs --with-cpu=cortex-m4"
+  else
+    WITH_ABI_OPTS=""
+  fi
 
   if [[ $HARDFLOAT == "Yes" ]]
   then
@@ -389,9 +414,9 @@ fi
 cd ../gcc 
 PATH="$DEST/bin:$PATH" 
 TIMESTAMP_BUILD_GCC_START=$SECONDS
-"../../$GCC_DIR/configure" --enable-languages="$LANGUAGES" --target="$TARGET" --prefix="$DEST" $WITH_OPTS $TARGET_OPTS $WITH_FLOAT_OPTS $DISABLE_OPTS $ENABLE_OPTS
-make --jobs=$NTHREAD --max-load=$NTHREAD LDFLAGS=-s all
-make --jobs=$NTHREAD --max-load=$NTHREAD LDFLAGS=-s all-gcc
+"../../$GCC_DIR/configure" --enable-languages="$LANGUAGES" --target="$TARGET" --prefix="$DEST" $WITH_OPTS $TARGET_OPTS $WITH_ABI_OPTS $WITH_FLOAT_OPTS $DISABLE_OPTS $ENABLE_MULTILIBS_OPTS $ENABLE_OPTS
+make $PARALLEL_EXE LDFLAGS=-s all
+make $PARALLEL_EXE LDFLAGS=-s all-gcc
 make install-gcc
 make install
 TIMESTAMP_BUILD_GCC_END=$SECONDS
@@ -403,7 +428,7 @@ then
   cd ../gdb 
   TIMESTAMP_BUILD_GDB_START=$SECONDS
   "../../$GDB_DIR/configure" --target="$TARGET" --prefix="$DEST" --with-guile=no
-  make --jobs=$NTHREAD --max-load=$NTHREAD --print-directory all MAKEINFO=true
+  make $PARALLEL_EXE --print-directory all MAKEINFO=true
   make install
   TIMESTAMP_BUILD_GDB_END=$SECONDS
 fi
