@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# GNU Toolchain Build Buddy v1.0.6
+# GNU Toolchain Build Buddy v1.0.7
 #
 # Simple wizard to download, configure and build the GNU toolchain
 # targeting especially bare-metal cross-compilers for embedded systems.
@@ -49,6 +49,9 @@
 #        with target arm-elf like gcc-3.x. Seems like eabi gcc-4.x
 #        also has some issues to be built with versions < gcc-4.6.x.
 #        To build gcc-3.4.6, use TARGET=arm-thumb-elf, newlib-1.12.0.
+# 1.0.7  Made gcc-4.4.7 and gcc-4.5.4 compile for arm-eabi by forcing
+#        -std=gnu89 and disabled doc generation with MAKEINFO=missing,
+#        needed newlib-1.19.0 to compile.
 #
 
 # Some packages possibly needed:
@@ -117,7 +120,7 @@ PARALLEL_EXE="--jobs=$NTHREAD --max-load=$NTHREAD"
 
 # Get user input what to build
 
-printf "GNU Toolchain BuildBuddy v1.0.6\n"
+printf "GNU Toolchain BuildBuddy v1.0.7\n"
 printf "Enter information what you want to build:\n"
 
 # Choose target
@@ -375,7 +378,7 @@ TIMESTAMP_BUILD_TOTAL_START=$SECONDS
 cd build/binutils 
 TIMESTAMP_BUILD_BINUTILS_START=$SECONDS
 "../../$BINUTILS_DIR/configure" --target="$TARGET" --prefix="$DEST" --disable-nls
-make $PARALLEL_EXE LDFLAGS=-s all
+make $PARALLEL_EXE LDFLAGS=-s all MAKEINFO=missing
 make install
 TIMESTAMP_BUILD_BINUTILS_END=$SECONDS
 
@@ -417,8 +420,8 @@ cd ../gcc
 PATH="$DEST/bin:$PATH" 
 TIMESTAMP_BUILD_GCC_START=$SECONDS
 "../../$GCC_DIR/configure" --enable-languages="$LANGUAGES" --target="$TARGET" --prefix="$DEST" $WITH_OPTS $TARGET_OPTS $WITH_ABI_OPTS $WITH_FLOAT_OPTS $DISABLE_OPTS $EXTRA_TARGET_OPTS $ENABLE_OPTS
-make $PARALLEL_EXE LDFLAGS=-s all
-make $PARALLEL_EXE LDFLAGS=-s all-gcc
+make CFLAGS='-std=gnu89' $PARALLEL_EXE LDFLAGS=-s all MAKEINFO=missing
+make CFLAGS='-std=gnu89' $PARALLEL_EXE LDFLAGS=-s all-gcc MAKEINFO=missing
 make install-gcc
 make install
 TIMESTAMP_BUILD_GCC_END=$SECONDS
