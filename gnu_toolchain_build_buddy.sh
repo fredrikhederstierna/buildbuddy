@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# GNU Toolchain Build Buddy v1.0.8
+# GNU Toolchain Build Buddy v1.1
 #
 # Simple wizard to download, configure and build the GNU toolchain
 # targeting especially bare-metal cross-compilers for embedded systems.
 #
-# Written by Fredrik Hederstierna 2015/2016/2017
+# Written by Fredrik Hederstierna 2015/2016/2017/2018
 #
 # This is free and unencumbered software released into the public domain.
 #
@@ -54,6 +54,8 @@
 #        needed newlib-1.19.0 to compile.
 # 1.0.8  Fix that GCC prior to 7.2 used bz2 not xz as compressor.
 #        Fix that BINUTILS prior to 2.29 used bz2 not xz as compressor.
+# 1.1    Added possibility to add command line arguments for defaults
+#        and to disable interactive mode.
 #
 
 # Some packages possibly needed:
@@ -75,7 +77,6 @@
 # https://bugs.archlinux.org/task/46951
 #
 # TODO:
-# * Make interactive optional, possible to input all parameters as arguments.
 # * Add more targets like avr, mips, msp430, i386 etc.
 #
 
@@ -84,6 +85,8 @@
 set -e
 
 # Setup defaults
+
+INTERACTIVE="Y"
 
 TARGET_DEFAULT=arm-none-eabi
 LANGUAGES_DEFAULT=c,c++
@@ -103,10 +106,6 @@ APPLY_PATCH_DEFAULT="Y"
 DOWNLOAD_GNU_SERVER="http://ftp.gnu.org/gnu"
 DOWNLOAD_NEWLIB_SERVER="ftp://sourceware.org/pub/newlib"
 
-BINUTILS_ARCH_SUFFIX=""
-GCC_ARCH_SUFFIX=""
-GDB_ARCH_SUFFIX=""
-
 # Extra proxy settings if needed for wget
 
 WGET_HTTP_PROXY_EXTRA=""
@@ -114,35 +113,70 @@ WGET_HTTP_PROXY_EXTRA=""
 WGET_FTP_PROXY_EXTRA=""
 #WGET_FTP_PROXY_EXTRA="-e use_proxy=yes -e ftp_proxy=127.0.0.1:8080"
 
-# Get max CPU cores to parallelize make
-# If this causes problems, just set PARALLEL_EXE=""
-# Sometimes I've observed that gcc-build just stops too early without error
+# Handle command line argument defaults overrides
 
-NPROCESS=`getconf _NPROCESSORS_ONLN`
-NTHREAD=$(($NPROCESS*2))
-PARALLEL_EXE="--jobs=$NTHREAD --max-load=$NTHREAD"
+for ARGUMENT in "$@"
+do
+    KEY=$(echo $ARGUMENT | cut -f1 -d=)
+    VALUE=$(echo $ARGUMENT | cut -f2 -d=)
+    case "$KEY" in
+            INTERACTIVE)            INTERACTIVE=${VALUE} ;;
+            TARGET)                 TARGET_DEFAULT=${VALUE} ;;
+            LANGUAGES)              LANGUAGES_DEFAULT=${VALUE} ;;
+            BINUTILS_VERSION)       BINUTILS_VERSION_DEFAULT=${VALUE} ;;
+            GCC_VERSION)            GCC_VERSION_DEFAULT=${VALUE} ;;
+            NEWLIB_VERSION)         NEWLIB_VERSION_DEFAULT=${VALUE} ;;
+            GDB_VERSION)            GDB_VERSION_DEFAULT=${VALUE} ;;
+            DEST_PATH)              DEST_PATH_DEFAULT=${VALUE} ;;
+            DEST_PATH_SUFFIX)       DEST_PATH_SUFFIX_DEFAULT=${VALUE} ;;
+            HARDFLOAT)              HARDFLOAT_DEFAULT=${VALUE} ;;
+            BUILD_GDB)              BUILD_DEFAULT=${VALUE} ;;
+            APPLY_PATCH)            APPLY_PATCH_DEFAULT=${VALUE} ;;
+            DOWNLOAD_GNU_SERVER)    DOWNLOAD_GNU_SERVER=${VALUE} ;;
+            DOWNLOAD_NEWLIB_SERVER) DOWNLOAD_NEWLIB_SERVER=${VALUE} ;;
+            WGET_HTTP_PROXY_EXTRA)  WGET_HTTP_PROXY_EXTRA=${VALUE} ;;
+            WGET_FTP_PROXY_EXTRA)   WGET_FTP_PROXY_EXTRA=${VALUE} ;;
+            *)
+    esac
+done
 
 # Get user input what to build
 
-printf "GNU Toolchain BuildBuddy v1.0.8\n"
-printf "Enter information what you want to build:\n"
+printf "GNU Toolchain BuildBuddy v1.1\n"
+printf "Entering information for requested build:\n"
+if [[ $INTERACTIVE =~ ^[Yy]$ ]]
+then
+  INTERACTIVE="Yes"
+else
+  INTERACTIVE="No"
+fi
+echo -e "Interactive: $INTERACTIVE"
 
 # Choose target
 
-read -p "Please enter toolchain target [$TARGET_DEFAULT]: " TARGET
+if [[ $INTERACTIVE == "Yes" ]]
+then
+  read -p "Please enter toolchain target [$TARGET_DEFAULT]: " TARGET
+fi
 TARGET="${TARGET:-$TARGET_DEFAULT}"
 echo -e "Toolchain target: $TARGET"
 
 # Choose languages
 
-read -p "Please enter languages to build [$LANGUAGES_DEFAULT]: " LANGUAGES
+if [[ $INTERACTIVE == "Yes" ]]
+then
+  read -p "Please enter languages to build [$LANGUAGES_DEFAULT]: " LANGUAGES
+fi
 LANGUAGES="${LANGUAGES:-$LANGUAGES_DEFAULT}"
 echo -e "Languages: $LANGUAGES"
 
 # Build GDB?
 
 printf "Should GDB be built? [$BUILD_GDB_DEFAULT]:"
-read -r -n1 -d '' BUILD_GDB
+if [[ $INTERACTIVE == "Yes" ]]
+then
+  read -r -n1 -d '' BUILD_GDB
+fi
 if [[ $BUILD_GDB != "" ]]
 then
   printf "\n"
@@ -156,12 +190,30 @@ else
 fi
 echo -e "Build GDB: $BUILD_GDB"
 
+# Get max CPU cores to parallelize make
+# If this causes problems, just set PARALLEL_EXE=""
+# Sometimes I've observed that gcc-build just stops too early without error
+
+NPROCESS=`getconf _NPROCESSORS_ONLN`
+NTHREAD=$(($NPROCESS*2))
+PARALLEL_EXE="--jobs=$NTHREAD --max-load=$NTHREAD"
+
+# Set some script generated local variables to empty
+
+BINUTILS_ARCH_SUFFIX=""
+GCC_ARCH_SUFFIX=""
+GDB_ARCH_SUFFIX=""
+
 # Choose tool versions to build
 
-read -p "Please enter Binutils version [$BINUTILS_VERSION_DEFAULT]: " BINUTILS_VERSION
+if [[ $INTERACTIVE == "Yes" ]]
+then
+  read -p "Please enter Binutils version [$BINUTILS_VERSION_DEFAULT]: " BINUTILS_VERSION
+fi
 BINUTILS_VERSION="${BINUTILS_VERSION:-$BINUTILS_VERSION_DEFAULT}"
 echo -e "Binutils version: $BINUTILS_VERSION"
-# Use version sort to get lowest version
+
+# Use version sort to get lowest BINUTILS version
 BINUTILS_VERSION_MIN=`echo -ne "2.29\n$BINUTILS_VERSION" |sort -V |head -n1`
 # From version 2.29 and newer BINUTILS use xz as compression algorithm
 if [[ $BINUTILS_VERSION_MIN < "2.29" ]]
@@ -173,10 +225,14 @@ else
  BINUTILS_ARCH_SUFFIX="xz"
 fi
 
-read -p "Please enter GCC version [$GCC_VERSION_DEFAULT]: " GCC_VERSION
+if [[ $INTERACTIVE == "Yes" ]]
+then
+  read -p "Please enter GCC version [$GCC_VERSION_DEFAULT]: " GCC_VERSION
+fi
 GCC_VERSION="${GCC_VERSION:-$GCC_VERSION_DEFAULT}"
 echo -e "GCC version: $GCC_VERSION"
-# Use version sort to get lowest version
+
+# Use version sort to get lowest GCC version
 GCC_VERSION_MIN=`echo -ne "7.2\n$GCC_VERSION" |sort -V |head -n1`
 # From version 7.2 and newer GCC use xz as compression algorithm
 if [[ $GCC_VERSION_MIN < "7.2" ]]
@@ -188,16 +244,23 @@ else
  GCC_ARCH_SUFFIX="xz"
 fi
 
-read -p "Please enter Newlib version [$NEWLIB_VERSION_DEFAULT]: " NEWLIB_VERSION
+if [[ $INTERACTIVE == "Yes" ]]
+then
+  read -p "Please enter Newlib version [$NEWLIB_VERSION_DEFAULT]: " NEWLIB_VERSION
+fi
 NEWLIB_VERSION="${NEWLIB_VERSION:-$NEWLIB_VERSION_DEFAULT}"
 echo -e "Newlib version: $NEWLIB_VERSION"
 
 if [[ $BUILD_GDB == "Yes" ]]
 then
-  read -p "Please enter GDB version [$GDB_VERSION_DEFAULT]: " GDB_VERSION
+  if [[ $INTERACTIVE == "Yes" ]]
+  then
+    read -p "Please enter GDB version [$GDB_VERSION_DEFAULT]: " GDB_VERSION
+  fi
   GDB_VERSION="${GDB_VERSION:-$GDB_VERSION_DEFAULT}"
   echo -e "GDB version: $GDB_VERSION"
-  # Use version sort to get lowest version
+
+  # Use version sort to get lowest GDB version
   GDB_VERSION_MIN=`echo -ne "7.8\n$GDB_VERSION" |sort -V |head -n1`
   # From version 7.8 and newer GDB use xz as compression algorithm
   if [[ $GDB_VERSION_MIN < "7.8" ]]
@@ -212,17 +275,27 @@ fi
 
 # Choose toolchain destination build path
 
-read -p "Please enter path where to build toolchain [$DEST_PATH_DEFAULT]: " DEST_PATH
+if [[ $INTERACTIVE == "Yes" ]]
+then
+  read -p "Please enter path where to build toolchain [$DEST_PATH_DEFAULT]: " DEST_PATH
+fi
 DEST_PATH="${DEST_PATH:-$DEST_PATH_DEFAULT}"
 
-read -p "Extra path suffix [$DEST_PATH_SUFFIX_DEFAULT]: " DEST_PATH_SUFFIX
+if [[ $INTERACTIVE == "Yes" ]]
+then
+  read -p "Extra path suffix [$DEST_PATH_SUFFIX_DEFAULT]: " DEST_PATH_SUFFIX
+fi
 DEST_PATH_SUFFIX="${DEST_PATH_SUFFIX:-$DEST_PATH_SUFFIX_DEFAULT}"
+# Set resulting destination path
 DEST="$DEST_PATH/$TARGET-toolchain-gcc-$GCC_VERSION$DEST_PATH_SUFFIX"
 
 # Set float config
 
 printf "Should GCC be built with hard float? [$HARDFLOAT_DEFAULT]: "
-read -r -n1 -d '' HARDFLOAT
+if [[ $INTERACTIVE == "Yes" ]]
+then
+  read -r -n1 -d '' HARDFLOAT
+fi
 if [[ $HARDFLOAT != "" ]]
 then
   printf "\n"
@@ -242,7 +315,10 @@ echo -e "Build toolchain into path: $DEST"
 # Patches
 
 printf "Apply patches? [$APPLY_PATCH_DEFAULT]: "
-read -r -n1 -d '' APPLY_PATCH
+if [[ $INTERACTIVE == "Yes" ]]
+then
+  read -r -n1 -d '' APPLY_PATCH
+fi
 if [[ $APPLY_PATCH != "" ]]
 then
   printf "\n"
