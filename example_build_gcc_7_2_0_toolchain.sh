@@ -18,5 +18,4 @@ ARGS+=' 'DOWNLOAD_NEWLIB_SERVER="ftp://sourceware.org/pub/newlib"
 ARGS+=' 'WGET_HTTP_PROXY_EXTRA=""
 ARGS+=' 'WGET_FTP_PROXY_EXTRA=""
 echo "Args: " ${ARGS}
-exit
 sudo ./gnu_toolchain_build_buddy.sh ${ARGS}
