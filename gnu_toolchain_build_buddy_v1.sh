@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# GNU Toolchain Build Buddy v1.0.7
+# GNU Toolchain Build Buddy v1.0.8
 #
 # Simple wizard to download, configure and build the GNU toolchain
 # targeting especially bare-metal cross-compilers for embedded systems.
@@ -52,6 +52,8 @@
 # 1.0.7  Made gcc-4.4.7 and gcc-4.5.4 compile for arm-eabi by forcing
 #        -std=gnu89 and disabled doc generation with MAKEINFO=missing,
 #        needed newlib-1.19.0 to compile.
+# 1.0.8  Fix that GCC prior to 7.2 used bz2 not xz as compressor.
+#        Fix that BINUTILS prior to 2.29 used bz2 not xz as compressor.
 #
 
 # Some packages possibly needed:
@@ -86,10 +88,10 @@ set -e
 TARGET_DEFAULT=arm-none-eabi
 LANGUAGES_DEFAULT=c,c++
 
-BINUTILS_VERSION_DEFAULT=2.29
-GCC_VERSION_DEFAULT=7.1.0
+BINUTILS_VERSION_DEFAULT=2.29.1
+GCC_VERSION_DEFAULT=7.2.0
 NEWLIB_VERSION_DEFAULT=2.5.0
-GDB_VERSION_DEFAULT=7.12.1
+GDB_VERSION_DEFAULT=8.0.1
 
 DEST_PATH_DEFAULT="/usr/local/gcc"
 DEST_PATH_SUFFIX_DEFAULT=""
@@ -101,6 +103,8 @@ APPLY_PATCH_DEFAULT="Y"
 DOWNLOAD_GNU_SERVER="http://ftp.gnu.org/gnu"
 DOWNLOAD_NEWLIB_SERVER="ftp://sourceware.org/pub/newlib"
 
+BINUTILS_ARCH_SUFFIX=""
+GCC_ARCH_SUFFIX=""
 GDB_ARCH_SUFFIX=""
 
 # Extra proxy settings if needed for wget
@@ -120,7 +124,7 @@ PARALLEL_EXE="--jobs=$NTHREAD --max-load=$NTHREAD"
 
 # Get user input what to build
 
-printf "GNU Toolchain BuildBuddy v1.0.7\n"
+printf "GNU Toolchain BuildBuddy v1.0.8\n"
 printf "Enter information what you want to build:\n"
 
 # Choose target
@@ -157,10 +161,32 @@ echo -e "Build GDB: $BUILD_GDB"
 read -p "Please enter Binutils version [$BINUTILS_VERSION_DEFAULT]: " BINUTILS_VERSION
 BINUTILS_VERSION="${BINUTILS_VERSION:-$BINUTILS_VERSION_DEFAULT}"
 echo -e "Binutils version: $BINUTILS_VERSION"
+# Use version sort to get lowest version
+BINUTILS_VERSION_MIN=`echo -ne "2.29\n$BINUTILS_VERSION" |sort -V |head -n1`
+# From version 2.29 and newer BINUTILS use xz as compression algorithm
+if [[ $BINUTILS_VERSION_MIN < "2.29" ]]
+then
+ echo -e "Use bz2 for decompression"
+ BINUTILS_ARCH_SUFFIX="bz2"
+else
+ echo -e "Use xz for decompression"
+ BINUTILS_ARCH_SUFFIX="xz"
+fi
 
 read -p "Please enter GCC version [$GCC_VERSION_DEFAULT]: " GCC_VERSION
 GCC_VERSION="${GCC_VERSION:-$GCC_VERSION_DEFAULT}"
 echo -e "GCC version: $GCC_VERSION"
+# Use version sort to get lowest version
+GCC_VERSION_MIN=`echo -ne "7.2\n$GCC_VERSION" |sort -V |head -n1`
+# From version 7.2 and newer GCC use xz as compression algorithm
+if [[ $GCC_VERSION_MIN < "7.2" ]]
+then
+ echo -e "Use bz2 for decompression"
+ GCC_ARCH_SUFFIX="bz2"
+else
+ echo -e "Use xz for decompression"
+ GCC_ARCH_SUFFIX="xz"
+fi
 
 read -p "Please enter Newlib version [$NEWLIB_VERSION_DEFAULT]: " NEWLIB_VERSION
 NEWLIB_VERSION="${NEWLIB_VERSION:-$NEWLIB_VERSION_DEFAULT}"
@@ -236,9 +262,21 @@ BINUTILS_DIR="binutils-$BINUTILS_VERSION"
 GCC_DIR="gcc-$GCC_VERSION" 
 NEWLIB_DIR="newlib-$NEWLIB_VERSION" 
 
-BINUTILS_SRC_FILE="binutils-$BINUTILS_VERSION.tar.bz2"
-GCC_SRC_FILE="gcc-$GCC_VERSION.tar.bz2"
 NEWLIB_SRC_FILE="newlib-$NEWLIB_VERSION.tar.gz"
+
+if [[ $BINUTILS_ARCH_SUFFIX == "xz" ]]
+then
+  BINUTILS_SRC_FILE="binutils-$BINUTILS_VERSION.tar.xz"
+else
+  BINUTILS_SRC_FILE="binutils-$BINUTILS_VERSION.tar.bz2"
+fi
+
+if [[ $GCC_ARCH_SUFFIX == "xz" ]]
+then
+  GCC_SRC_FILE="gcc-$GCC_VERSION.tar.xz"
+else
+  GCC_SRC_FILE="gcc-$GCC_VERSION.tar.bz2"
+fi
 
 if [[ $BUILD_GDB == "Yes" ]]
 then
@@ -290,12 +328,27 @@ fi
 # Unpack tar-balls: 'z' for gz, 'j' for bz2, 'J' for xz
 
 rm -fr "$BINUTILS_DIR" "$GCC_DIR" "$NEWLIB_DIR"
+
 echo -e "Unpacking binutils sources..."
-tar xjf "$BINUTILS_SRC_FILE"
+if [[ $BINUTILS_ARCH_SUFFIX == "xz" ]]
+then
+  tar xJf "$BINUTILS_SRC_FILE"
+else
+  tar xjf "$BINUTILS_SRC_FILE"
+fi
+
 echo -e "Unpacking gcc sources..."
-tar xjf "$GCC_SRC_FILE"
+if [[ $GCC_ARCH_SUFFIX == "xz" ]]
+then
+  tar xJf "$GCC_SRC_FILE"
+else
+  tar xjf "$GCC_SRC_FILE"
+fi
+
+
 echo -e "Unpacking newlib sources..."
 tar xzf "$NEWLIB_SRC_FILE"
+
 if [[ $BUILD_GDB == "Yes" ]]
 then
   rm -fr "$GDB_DIR"
