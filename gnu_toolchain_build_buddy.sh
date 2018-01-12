@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# GNU Toolchain Build Buddy v1.1
+# GNU Toolchain Build Buddy v1.2
 #
 # Simple wizard to download, configure and build the GNU toolchain
 # targeting especially bare-metal cross-compilers for embedded systems.
@@ -56,6 +56,8 @@
 #        Fix that BINUTILS prior to 2.29 used bz2 not xz as compressor.
 # 1.1    Added possibility to add command line arguments for defaults
 #        and to disable interactive mode.
+# 1.2    Added parallel execution when extracting compressed sources.
+#        Added optional sudo execution for make install.
 #
 
 # Some packages possibly needed:
@@ -86,63 +88,39 @@ set -e
 
 # Setup defaults
 
-INTERACTIVE="Y"
+INTERACTIVE=${INTERACTIVE:-"Y"}
 
-TARGET_DEFAULT=arm-none-eabi
-LANGUAGES_DEFAULT=c,c++
+TARGET_DEFAULT=${TARGET_DEFAULT:-arm-none-eabi}
+LANGUAGES_DEFAULT=${LANGUAGES_DEFAULT:-c,c++}
 
-BINUTILS_VERSION_DEFAULT=2.29.1
-GCC_VERSION_DEFAULT=7.2.0
-NEWLIB_VERSION_DEFAULT=2.5.0
-GDB_VERSION_DEFAULT=8.0.1
+BINUTILS_VERSION_DEFAULT=${BINUTILS_VERSION_DEFAULT:-2.29.1}
+GCC_VERSION_DEFAULT=${GCC_VERSION_DEFAULT:-7.2.0}
+NEWLIB_VERSION_DEFAULT=${NEWLIB_VERSION_DEFAULT:-2.5.0}
+GDB_VERSION_DEFAULT=${GDB_VERSION_DEFAULT:-8.0.1}
 
-DEST_PATH_DEFAULT="/usr/local/gcc"
-DEST_PATH_SUFFIX_DEFAULT=""
+DEST_PATH_DEFAULT=${DEST_PATH_DEFAULT:-"/usr/local/gcc"}
+DEST_PATH_SUFFIX_DEFAULT=${DEST_PATH_SUFFIX_DEFAULT:-""}
 
-HARDFLOAT_DEFAULT="Y"
-BUILD_GDB_DEFAULT="Y"
-APPLY_PATCH_DEFAULT="Y"
+HARDFLOAT_DEFAULT=${HARDFLOAT_DEFAULT:-"Y"}
+BUILD_GDB_DEFAULT=${BUILD_GDB_DEFAULT:-"Y"}
+SUDO_INSTALL_DEFAULT=${SUDO_INSTALL_DEFAULT:-"Y"}
+APPLY_PATCH_DEFAULT=${APPLY_PATCH_DEFAULT:-"Y"}
 
-DOWNLOAD_GNU_SERVER="http://ftp.gnu.org/gnu"
-DOWNLOAD_NEWLIB_SERVER="ftp://sourceware.org/pub/newlib"
+DOWNLOAD_GNU_SERVER=${DOWNLOAD_GNU_SERVER:-"http://ftp.gnu.org/gnu"}
+DOWNLOAD_NEWLIB_SERVER=${DOWNLOAD_NEWLIB_SERVER:-"ftp://sourceware.org/pub/newlib"}
 
 # Extra proxy settings if needed for wget
+# format: WGET_HTTP_PROXY_EXTRA="-e use_proxy=yes -e http_proxy=127.0.0.1:8080"
+# format: WGET_FTP_PROXY_EXTRA="-e use_proxy=yes -e ftp_proxy=127.0.0.1:8080"
 
-WGET_HTTP_PROXY_EXTRA=""
-#WGET_HTTP_PROXY_EXTRA="-e use_proxy=yes -e http_proxy=127.0.0.1:8080"
-WGET_FTP_PROXY_EXTRA=""
-#WGET_FTP_PROXY_EXTRA="-e use_proxy=yes -e ftp_proxy=127.0.0.1:8080"
-
-# Handle command line argument defaults overrides
-
-for ARGUMENT in "$@"
-do
-    KEY=$(echo $ARGUMENT | cut -f1 -d=)
-    VALUE=$(echo $ARGUMENT | cut -f2 -d=)
-    case "$KEY" in
-            INTERACTIVE)            INTERACTIVE=${VALUE} ;;
-            TARGET)                 TARGET_DEFAULT=${VALUE} ;;
-            LANGUAGES)              LANGUAGES_DEFAULT=${VALUE} ;;
-            BINUTILS_VERSION)       BINUTILS_VERSION_DEFAULT=${VALUE} ;;
-            GCC_VERSION)            GCC_VERSION_DEFAULT=${VALUE} ;;
-            NEWLIB_VERSION)         NEWLIB_VERSION_DEFAULT=${VALUE} ;;
-            GDB_VERSION)            GDB_VERSION_DEFAULT=${VALUE} ;;
-            DEST_PATH)              DEST_PATH_DEFAULT=${VALUE} ;;
-            DEST_PATH_SUFFIX)       DEST_PATH_SUFFIX_DEFAULT=${VALUE} ;;
-            HARDFLOAT)              HARDFLOAT_DEFAULT=${VALUE} ;;
-            BUILD_GDB)              BUILD_DEFAULT=${VALUE} ;;
-            APPLY_PATCH)            APPLY_PATCH_DEFAULT=${VALUE} ;;
-            DOWNLOAD_GNU_SERVER)    DOWNLOAD_GNU_SERVER=${VALUE} ;;
-            DOWNLOAD_NEWLIB_SERVER) DOWNLOAD_NEWLIB_SERVER=${VALUE} ;;
-            WGET_HTTP_PROXY_EXTRA)  WGET_HTTP_PROXY_EXTRA=${VALUE} ;;
-            WGET_FTP_PROXY_EXTRA)   WGET_FTP_PROXY_EXTRA=${VALUE} ;;
-            *)
-    esac
-done
+WGET_HTTP_PROXY_EXTRA=${WGET_HTTP_PROXY_EXTRA:-""}
+WGET_FTP_PROXY_EXTRA=${WGET_FTP_PROXY_EXTRA:-""}
 
 # Get user input what to build
 
-printf "GNU Toolchain BuildBuddy v1.1\n"
+printf "GNU Toolchain BuildBuddy v1.2\n"
+printf "HTTP proxy for wget: $WGET_HTTP_PROXY_EXTRA\n"
+printf "FTP proxy for wget:  $WGET_FTP_PROXY_EXTRA\n"
 printf "Entering information for requested build:\n"
 if [[ $INTERACTIVE =~ ^[Yy]$ ]]
 then
@@ -189,6 +167,28 @@ else
   BUILD_GDB="No"
 fi
 echo -e "Build GDB: $BUILD_GDB"
+
+# Superuser execution of make install
+
+printf "Should make install be executed with sudo? [$SUDO_INSTALL_DEFAULT]:"
+if [[ $INTERACTIVE == "Yes" ]]
+then
+  read -r -n1 -d '' SUDO_INSTALL
+fi
+if [[ $SUDO_INSTALL != "" ]]
+then
+  printf "\n"
+fi
+SUDO_INSTALL="${SUDO_INSTALL:-$SUDO_INSTALL_DEFAULT}"
+if [[ $SUDO_INSTALL =~ ^[Yy]$ ]]
+then
+  SUDO_INSTALL="Yes"
+  SUDO="sudo"
+else
+  SUDO_INSTALL="No"
+  SUDO=""
+fi
+echo -e "Make install with sudo: $SUDO_INSTALL"
 
 # Get max CPU cores to parallelize make
 # If this causes problems, just set PARALLEL_EXE=""
@@ -367,7 +367,7 @@ fi
 
 # Set rwx access
 
-umask 022 
+umask 022
 
 # Download tar-balls if not present
 
@@ -408,22 +408,22 @@ rm -fr "$BINUTILS_DIR" "$GCC_DIR" "$NEWLIB_DIR"
 echo -e "Unpacking binutils sources..."
 if [[ $BINUTILS_ARCH_SUFFIX == "xz" ]]
 then
-  tar xJf "$BINUTILS_SRC_FILE"
+  tar xJf "$BINUTILS_SRC_FILE" &
 else
-  tar xjf "$BINUTILS_SRC_FILE"
+  tar xjf "$BINUTILS_SRC_FILE" &
 fi
 
 echo -e "Unpacking gcc sources..."
 if [[ $GCC_ARCH_SUFFIX == "xz" ]]
 then
-  tar xJf "$GCC_SRC_FILE"
+  tar xJf "$GCC_SRC_FILE" &
 else
-  tar xjf "$GCC_SRC_FILE"
+  tar xjf "$GCC_SRC_FILE" &
 fi
 
 
 echo -e "Unpacking newlib sources..."
-tar xzf "$NEWLIB_SRC_FILE"
+tar xzf "$NEWLIB_SRC_FILE" &
 
 if [[ $BUILD_GDB == "Yes" ]]
 then
@@ -431,17 +431,24 @@ then
   echo -e "Unpacking gdb sources..."
   if [[ $GDB_ARCH_SUFFIX == "xz" ]]
   then
-    tar xJf "$GDB_SRC_FILE"
+    tar xJf "$GDB_SRC_FILE" &
   else
-    tar xjf "$GDB_SRC_FILE"
+    tar xjf "$GDB_SRC_FILE" &
   fi
 fi
+
+# Wait for parallelized extractions to finish
+echo -e "Waiting of unpacking finished..."
+for job in `jobs -p`
+do
+    wait $job
+done
 
 # Create sym links to newlib
 
 cd "$GCC_DIR"
-ln -s "../$NEWLIB_DIR/newlib" newlib 
-ln -s "../$NEWLIB_DIR/libgloss" libgloss 
+ln -s "../$NEWLIB_DIR/newlib" newlib
+ln -s "../$NEWLIB_DIR/libgloss" libgloss
 cd ..
 
 # Remove if any old build dir
@@ -504,11 +511,11 @@ TIMESTAMP_BUILD_TOTAL_START=$SECONDS
 
 # Build binutils
 
-cd build/binutils 
+cd build/binutils
 TIMESTAMP_BUILD_BINUTILS_START=$SECONDS
 "../../$BINUTILS_DIR/configure" --target="$TARGET" --prefix="$DEST" --disable-nls
 make $PARALLEL_EXE LDFLAGS=-s all MAKEINFO=missing
-make install
+$SUDO make install
 TIMESTAMP_BUILD_BINUTILS_END=$SECONDS
 
 # Setup gcc build flags
@@ -545,25 +552,25 @@ fi
 
 # Build gcc
 
-cd ../gcc 
-PATH="$DEST/bin:$PATH" 
+cd ../gcc
+PATH="$DEST/bin:$PATH"
 TIMESTAMP_BUILD_GCC_START=$SECONDS
 "../../$GCC_DIR/configure" --enable-languages="$LANGUAGES" --target="$TARGET" --prefix="$DEST" $WITH_OPTS $TARGET_OPTS $WITH_ABI_OPTS $WITH_FLOAT_OPTS $DISABLE_OPTS $EXTRA_TARGET_OPTS $ENABLE_OPTS
 make CFLAGS='-std=gnu89' $PARALLEL_EXE LDFLAGS=-s all MAKEINFO=missing
 make CFLAGS='-std=gnu89' $PARALLEL_EXE LDFLAGS=-s all-gcc MAKEINFO=missing
-make install-gcc
-make install
+$SUDO make install-gcc
+$SUDO make install
 TIMESTAMP_BUILD_GCC_END=$SECONDS
 
 # Build gdb
 
 if [[ $BUILD_GDB == "Yes" ]]
 then
-  cd ../gdb 
+  cd ../gdb
   TIMESTAMP_BUILD_GDB_START=$SECONDS
   "../../$GDB_DIR/configure" --target="$TARGET" --prefix="$DEST" --with-guile=no
   make $PARALLEL_EXE --print-directory all MAKEINFO=true
-  make install
+  $SUDO make install
   TIMESTAMP_BUILD_GDB_END=$SECONDS
 fi
 
@@ -574,7 +581,7 @@ echo -e "All done."
 
 # Remove uncompressed sources
 
-cd ../.. 
+cd ../..
 rm -fr build "$BINUTILS_DIR" "$GCC_DIR" "$NEWLIB_DIR"
 if [[ $BUILD_GDB == "Yes" ]]
 then
