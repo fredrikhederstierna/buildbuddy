@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# GNU Toolchain Build Buddy v1.2
+# GNU Toolchain Build Buddy v1.2.1
 #
 # Simple wizard to download, configure and build the GNU toolchain
 # targeting especially bare-metal cross-compilers for embedded systems.
@@ -58,6 +58,7 @@
 #        and to disable interactive mode.
 # 1.2    Added parallel execution when extracting compressed sources.
 #        Added optional sudo execution for make install.
+# 1.2.1  Added optional multilib and cpu config.
 #
 
 # Some packages possibly needed:
@@ -118,7 +119,7 @@ WGET_FTP_PROXY_EXTRA=${WGET_FTP_PROXY_EXTRA:-""}
 
 # Get user input what to build
 
-printf "GNU Toolchain BuildBuddy v1.2\n"
+printf "GNU Toolchain BuildBuddy v1.2.1\n"
 printf "HTTP proxy for wget: $WGET_HTTP_PROXY_EXTRA\n"
 printf "FTP proxy for wget:  $WGET_FTP_PROXY_EXTRA\n"
 printf "Entering information for requested build:\n"
@@ -189,6 +190,17 @@ else
   SUDO=""
 fi
 echo -e "Make install with sudo: $SUDO_INSTALL"
+
+# Check multilib
+
+ENABLE_MULTILIB=${ENABLE_MULTILIB:-"Y"}
+if [[ $ENABLE_MULTILIB =~ ^[Yy]$ ]]
+then
+  MULTILIB="--enable-multilib"
+else
+  MULTILIB="--disable-multilib"
+fi
+echo -e "Multilib: $ENABLE_MULTILIB"
 
 # Get max CPU cores to parallelize make
 # If this causes problems, just set PARALLEL_EXE=""
@@ -535,11 +547,15 @@ then
   # Older gcc-3.4.6 do not use eabi, use arm-elf default abi
   if [[ $TARGET == *"eabi"* ]]
   then
-    EXTRA_TARGET_OPTS="--enable-multilib"
-    WITH_ABI_OPTS="--with-mode=thumb --with-abi=aapcs --with-cpu=cortex-m4"
+    # If no explicit CPU selected, use cortex-m4 by default for arm-eabi
+    WITH_CPU=${WITH_CPU:-"cortex-m4"}
+    EXTRA_TARGET_OPTS="$MULTILIB"
+    WITH_ABI_OPTS="--with-mode=thumb --with-abi=aapcs --with-cpu=$WITH_CPU"
   else
-    EXTRA_TARGET_OPTS="--enable-multilib --enable-targets=arm-elf"
-    WITH_ABI_OPTS="--with-cpu=arm7tdmi"
+    # If no explicit CPU selected, use arm7tdmi by default for arm-elf
+    WITH_CPU=${WITH_CPU:-"arm7tdmi"}
+    EXTRA_TARGET_OPTS="$MULTILIB --enable-targets=arm-elf"
+    WITH_ABI_OPTS="--with-cpu=$WITH_CPU"
   fi
 
   if [[ $HARDFLOAT == "Yes" ]]
