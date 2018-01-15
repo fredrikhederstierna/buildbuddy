@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# GNU Toolchain Build Buddy v1.2.1
+# GNU Toolchain Build Buddy v1.2.2
 #
 # Simple wizard to download, configure and build the GNU toolchain
 # targeting especially bare-metal cross-compilers for embedded systems.
@@ -59,6 +59,7 @@
 # 1.2    Added parallel execution when extracting compressed sources.
 #        Added optional sudo execution for make install.
 # 1.2.1  Added optional multilib and cpu config.
+# 1.2.2  Added versions of binutils and newlib on dest path.
 #
 
 # Some packages possibly needed:
@@ -119,7 +120,7 @@ WGET_FTP_PROXY_EXTRA=${WGET_FTP_PROXY_EXTRA:-""}
 
 # Get user input what to build
 
-printf "GNU Toolchain BuildBuddy v1.2.1\n"
+printf "GNU Toolchain BuildBuddy v1.2.2\n"
 printf "HTTP proxy for wget: $WGET_HTTP_PROXY_EXTRA\n"
 printf "FTP proxy for wget:  $WGET_FTP_PROXY_EXTRA\n"
 printf "Entering information for requested build:\n"
@@ -298,8 +299,6 @@ then
   read -p "Extra path suffix [$DEST_PATH_SUFFIX_DEFAULT]: " DEST_PATH_SUFFIX
 fi
 DEST_PATH_SUFFIX="${DEST_PATH_SUFFIX:-$DEST_PATH_SUFFIX_DEFAULT}"
-# Set resulting destination path
-DEST="$DEST_PATH/$TARGET-toolchain-gcc-$GCC_VERSION$DEST_PATH_SUFFIX"
 
 # Set float config
 
@@ -316,12 +315,15 @@ HARDFLOAT="${HARDFLOAT:-$HARDFLOAT_DEFAULT}"
 if [[ $HARDFLOAT =~ ^[Yy]$ ]]
 then
   HARDFLOAT="Yes"
-  DEST="$DEST-hardfloat"
+  FLOAT="hardfloat"
 else
   HARDFLOAT="No"
-  DEST="$DEST-softfloat"
+  FLOAT="softfloat"
 fi
 echo -e "\nUse Hardfloat: $HARDFLOAT"
+
+# Set resulting destination path
+DEST="$DEST_PATH/$TARGET-toolchain-gcc-$GCC_VERSION-binutils-$BINUTILS_VERSION-newlib-$NEWLIB_VERSION-$FLOAT$DEST_PATH_SUFFIX"
 echo -e "Build toolchain into path: $DEST"
 
 # Patches
