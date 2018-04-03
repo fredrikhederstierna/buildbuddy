@@ -109,7 +109,7 @@ SUDO_INSTALL_DEFAULT=${SUDO_INSTALL_DEFAULT:-"Y"}
 APPLY_PATCH_DEFAULT=${APPLY_PATCH_DEFAULT:-"Y"}
 
 DOWNLOAD_GNU_SERVER=${DOWNLOAD_GNU_SERVER:-"http://ftp.gnu.org/gnu"}
-DOWNLOAD_NEWLIB_SERVER=${DOWNLOAD_NEWLIB_SERVER:-"ftp://sourceware.org/pub/newlib"}
+DOWNLOAD_NEWLIB_SERVER=${DOWNLOAD_NEWLIB_SERVER:-"http://sourceware.org/pub/newlib"}
 
 # Extra proxy settings if needed for wget
 # format: WGET_HTTP_PROXY_EXTRA="-e use_proxy=yes -e http_proxy=127.0.0.1:8080"
