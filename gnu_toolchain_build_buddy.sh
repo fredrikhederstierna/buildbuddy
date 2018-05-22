@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# GNU Toolchain Build Buddy v1.2.2
+# GNU Toolchain Build Buddy v1.3
 #
 # Simple wizard to download, configure and build the GNU toolchain
 # targeting especially bare-metal cross-compilers for embedded systems.
@@ -60,6 +60,9 @@
 #        Added optional sudo execution for make install.
 # 1.2.1  Added optional multilib and cpu config.
 # 1.2.2  Added versions of binutils and newlib on dest path.
+# 1.3    Added RPM package support. Added static build support.
+#        Removed newlib FTP dependency. Added gitignore for archives.
+#        Thanks to Par L for contrib!
 #
 
 # Some packages possibly needed:
@@ -104,12 +107,14 @@ DEST_PATH_DEFAULT=${DEST_PATH_DEFAULT:-"/usr/local/gcc"}
 DEST_PATH_SUFFIX_DEFAULT=${DEST_PATH_SUFFIX_DEFAULT:-""}
 
 HARDFLOAT_DEFAULT=${HARDFLOAT_DEFAULT:-"Y"}
+STATIC_DEFAULT=${STATIC_DEFAULT:-"N"}
 BUILD_GDB_DEFAULT=${BUILD_GDB_DEFAULT:-"Y"}
+BUILD_RPM_DEFAULT=${BUILD_RPM_DEFAULT:-"N"}
 SUDO_INSTALL_DEFAULT=${SUDO_INSTALL_DEFAULT:-"Y"}
 APPLY_PATCH_DEFAULT=${APPLY_PATCH_DEFAULT:-"Y"}
 
 DOWNLOAD_GNU_SERVER=${DOWNLOAD_GNU_SERVER:-"http://ftp.gnu.org/gnu"}
-DOWNLOAD_NEWLIB_SERVER=${DOWNLOAD_NEWLIB_SERVER:-"ftp://sourceware.org/pub/newlib"}
+DOWNLOAD_NEWLIB_SERVER=${DOWNLOAD_NEWLIB_SERVER:-"http://sourceware.org/pub/newlib"}
 
 # Extra proxy settings if needed for wget
 # format: WGET_HTTP_PROXY_EXTRA="-e use_proxy=yes -e http_proxy=127.0.0.1:8080"
@@ -120,7 +125,7 @@ WGET_FTP_PROXY_EXTRA=${WGET_FTP_PROXY_EXTRA:-""}
 
 # Get user input what to build
 
-printf "GNU Toolchain BuildBuddy v1.2.2\n"
+printf "GNU Toolchain BuildBuddy v1.3\n"
 printf "HTTP proxy for wget: $WGET_HTTP_PROXY_EXTRA\n"
 printf "FTP proxy for wget:  $WGET_FTP_PROXY_EXTRA\n"
 printf "Entering information for requested build:\n"
@@ -169,6 +174,26 @@ else
   BUILD_GDB="No"
 fi
 echo -e "Build GDB: $BUILD_GDB"
+
+# Build RPM?
+
+printf "Should RPM be built? [$BUILD_RPM_DEFAULT]:"
+if [[ $INTERACTIVE == "Yes" ]]
+then
+  read -r -n1 -d '' BUILD_RPM
+fi
+if [[ $BUILD_RPM != "" ]]
+then
+  printf "\n"
+fi
+BUILD_RPM="${BUILD_RPM:-$BUILD_RPM_DEFAULT}"
+if [[ $BUILD_RPM =~ ^[Yy]$ ]]
+then
+  BUILD_RPM="Yes"
+else
+  BUILD_RPM="No"
+fi
+echo -e "Build RPM: $BUILD_RPM"
 
 # Superuser execution of make install
 
@@ -322,9 +347,40 @@ else
 fi
 echo -e "\nUse Hardfloat: $HARDFLOAT"
 
+# Set static config
+
+printf "Should GCC be built static? [$STATIC_DEFAULT]: "
+if [[ $INTERACTIVE == "Yes" ]]
+then
+  read -r -n1 -d '' STATIC
+fi
+if [[ $STATIC != "" ]]
+then
+  printf "\n"
+fi
+STATIC="${STATIC:-$STATIC_DEFAULT}"
+if [[ $STATIC =~ ^[Yy]$ ]]
+then
+  STATIC="Yes"
+  STATIC_COMPILE_ARG="-static"
+  GCC_CONFIG_STATIC="--disable-shared --disable-host-shared"
+else
+  STATIC="No"
+  STATIC_COMPILE_ARG=""
+  GCC_CONFIG_STATIC=""
+fi
+echo -e "\nUse Static: $STATIC"
+
 # Set resulting destination path
 DEST="$DEST_PATH/$TARGET-toolchain-gcc-$GCC_VERSION-binutils-$BINUTILS_VERSION-newlib-$NEWLIB_VERSION-$FLOAT$DEST_PATH_SUFFIX"
 echo -e "Build toolchain into path: $DEST"
+
+# Special handling if building RPM
+if [[ $BUILD_RPM == "Yes" ]]
+then
+  PACKAGE_NAME="$TARGET-toolchain-gcc-$GCC_VERSION-binutils-$BINUTILS_VERSION-newlib-$NEWLIB_VERSION-$FLOAT$DEST_PATH_SUFFIX"
+  DEST="$PWD$DEST"
+fi
 
 # Patches
 
@@ -403,7 +459,7 @@ fi
 
 if [ ! -f  ${NEWLIB_SRC_FILE} ]; then
   echo -e Downloading: $NEWLIB_SRC_FILE
-  wget $WGET_FTP_PROXY_EXTRA $DOWNLOAD_NEWLIB_SERVER/$NEWLIB_SRC_FILE
+  wget $WGET_HTTP_PROXY_EXTRA $DOWNLOAD_NEWLIB_SERVER/$NEWLIB_SRC_FILE
 fi
 
 if [[ $BUILD_GDB == "Yes" ]]
@@ -528,14 +584,14 @@ TIMESTAMP_BUILD_TOTAL_START=$SECONDS
 cd build/binutils
 TIMESTAMP_BUILD_BINUTILS_START=$SECONDS
 "../../$BINUTILS_DIR/configure" --target="$TARGET" --prefix="$DEST" --disable-nls
-make $PARALLEL_EXE LDFLAGS=-s all MAKEINFO=missing
+make $PARALLEL_EXE LDFLAGS="-s $STATIC_COMPILE_ARG" all MAKEINFO=missing
 $SUDO make install
 TIMESTAMP_BUILD_BINUTILS_END=$SECONDS
 
 # Setup gcc build flags
 
 WITH_OPTS="--with-gnu-as --with-gnu-ld --with-newlib --with-system-zlib"
-DISABLE_OPTS="--disable-nls --disable-libssp"
+DISABLE_OPTS="--disable-nls --disable-libssp $GCC_CONFIG_STATIC"
 ENABLE_OPTS=""
 
 # Target specific flags
@@ -574,8 +630,8 @@ cd ../gcc
 PATH="$DEST/bin:$PATH"
 TIMESTAMP_BUILD_GCC_START=$SECONDS
 "../../$GCC_DIR/configure" --enable-languages="$LANGUAGES" --target="$TARGET" --prefix="$DEST" $WITH_OPTS $TARGET_OPTS $WITH_ABI_OPTS $WITH_FLOAT_OPTS $DISABLE_OPTS $EXTRA_TARGET_OPTS $ENABLE_OPTS
-make CFLAGS='-std=gnu89' $PARALLEL_EXE LDFLAGS=-s all MAKEINFO=missing
-make CFLAGS='-std=gnu89' $PARALLEL_EXE LDFLAGS=-s all-gcc MAKEINFO=missing
+make CFLAGS='-std=gnu89' $PARALLEL_EXE LDFLAGS="-s $STATIC_COMPILE_ARG" all MAKEINFO=missing
+make CFLAGS='-std=gnu89' $PARALLEL_EXE LDFLAGS="-s $STATIC_COMPILE_ARG" all-gcc MAKEINFO=missing
 $SUDO make install-gcc
 $SUDO make install
 TIMESTAMP_BUILD_GCC_END=$SECONDS
@@ -623,3 +679,12 @@ echo "Build time Total  : $(($TIME_TOTAL / 3600)) hours, $((($TIME_TOTAL / 60) %
 # Done
 
 echo -e "Toolchain built into dir: " $DEST
+
+# Build RPM if requested
+
+if [[ $BUILD_RPM == "Yes" ]]
+then
+  echo -e "Building the RPM package...(and deb)"
+  rpmbuild --define "name $PACKAGE_NAME" --define "deploy_dir $PWD/$DEST_PATH" --define "os_install_dir $DEST_PATH" --buildroot="/tmp/RPM-BUILDROOT/$PACKAGE_NAME" --nocheck -bb rpm.spec
+  fakeroot alien --fixperms --verbose -k x86_64/$PACKAGE_NAME-1.0-1.x86_64.rpm
+fi
