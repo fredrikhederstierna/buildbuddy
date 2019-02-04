@@ -1,6 +1,8 @@
 #!/bin/bash
 
-# GNU Toolchain Build Buddy v1.3.2
+VERSION="1.3.3"
+
+# GNU Toolchain Build Buddy
 #
 # Simple wizard to download, configure and build the GNU toolchain
 # targeting especially bare-metal cross-compilers for embedded systems.
@@ -66,6 +68,7 @@
 # 1.3.1  Fixed regexp for interactive to accept any word starting with y/Y/n/N.
 #        Thanks to Magnus L for testing and ideas!
 # 1.3.2  Made parallel make optional.
+# 1.3.3  Added write to a build config file.
 #
 
 # Some packages possibly needed:
@@ -128,7 +131,7 @@ WGET_FTP_PROXY_EXTRA=${WGET_FTP_PROXY_EXTRA:-""}
 
 # Get user input what to build
 
-printf "GNU Toolchain BuildBuddy v1.3.2\n"
+printf "GNU Toolchain BuildBuddy version $VERSION\n"
 printf "HTTP proxy for wget: $WGET_HTTP_PROXY_EXTRA\n"
 printf "FTP proxy for wget:  $WGET_FTP_PROXY_EXTRA\n"
 printf "Entering information for requested build:\n"
@@ -454,6 +457,36 @@ fi
 
 umask 022
 
+# Write config made
+
+BUILD_CONFIG_FILENAME="build.cfg"
+echo "#!/bin/bash" > $BUILD_CONFIG_FILENAME
+echo "# Buildbuddy version $VERSION." >> $BUILD_CONFIG_FILENAME
+echo "# Auto-generated build config." >> $BUILD_CONFIG_FILENAME
+echo "INTERACTIVE=\"$INTERACTIVE\""   >> $BUILD_CONFIG_FILENAME
+echo "TARGET=\"$TARGET\""             >> $BUILD_CONFIG_FILENAME
+echo "WITH_CPU=\"$WITH_CPU\""         >> $BUILD_CONFIG_FILENAME
+echo "ENABLE_MULTILIB=\"$ENABLE_MULTILIB\""   >> $BUILD_CONFIG_FILENAME
+echo "PARALLEL_MAKE=\"$PARALLEL_MAKE\""       >> $BUILD_CONFIG_FILENAME
+echo "LANGUAGES=\"$LANGUAGES\""               >> $BUILD_CONFIG_FILENAME
+echo "BINUTILS_VERSION=\"$BINUTILS_VERSION\"" >> $BUILD_CONFIG_FILENAME
+echo "GCC_VERSION=\"$GCC_VERSION\""           >> $BUILD_CONFIG_FILENAME
+echo "NEWLIB_VERSION=\"$NEWLIB_VERSION\""     >> $BUILD_CONFIG_FILENAME
+echo "GDB_VERSION=\"$GDB_VERSION\""           >> $BUILD_CONFIG_FILENAME
+echo "DEST_PATH=\"$DEST_PATH\""               >> $BUILD_CONFIG_FILENAME
+echo "DEST_PATH_SUFFIX=\"$DEST_PATH_SUFFIX\"" >> $BUILD_CONFIG_FILENAME
+echo "HARDFLOAT=\"$HARDFLOAT\"" >> $BUILD_CONFIG_FILENAME
+echo "STATIC=\"$STATIC\""       >> $BUILD_CONFIG_FILENAME
+echo "BUILD_GDB=\"$BUILD_GDB\"" >> $BUILD_CONFIG_FILENAME
+echo "BUILD_RPM=\"$BUILD_RPM\"" >> $BUILD_CONFIG_FILENAME
+echo "SUDO_INSTALL=\"$SUDO_INSTALL\"" >> $BUILD_CONFIG_FILENAME
+echo "APPLY_PATCH=\"$APPLY_PATCH\""   >> $BUILD_CONFIG_FILENAME
+echo "DOWNLOAD_GNU_SERVER=\"$DOWNLOAD_GNU_SERVER\""       >> $BUILD_CONFIG_FILENAME
+echo "DOWNLOAD_NEWLIB_SERVER=\"$DOWNLOAD_NEWLIB_SERVER\"" >> $BUILD_CONFIG_FILENAME
+echo "WGET_HTTP_PROXY_EXTRA=\"$WGET_HTTP_PROXY_EXTRA\"" >> $BUILD_CONFIG_FILENAME
+echo "WGET_FTP_PROXY_EXTRA=\"$WGET_FTP_PROXY_EXTRA\""   >> $BUILD_CONFIG_FILENAME
+echo "source ./gnu_toolchain_build_buddy.sh"   >> $BUILD_CONFIG_FILENAME
+
 # Download tar-balls if not present
 
 # Check and Download Binutils
@@ -694,6 +727,7 @@ echo "Build time Total  : $(($TIME_TOTAL / 3600)) hours, $((($TIME_TOTAL / 60) %
 # Done
 
 echo -e "Toolchain built into dir: " $DEST
+echo -e "Build config written to file: " $BUILD_CONFIG_FILENAME
 
 # Build RPM if requested
 
