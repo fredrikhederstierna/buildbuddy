@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# GNU Toolchain Build Buddy v1.3
+# GNU Toolchain Build Buddy v1.3.1
 #
 # Simple wizard to download, configure and build the GNU toolchain
 # targeting especially bare-metal cross-compilers for embedded systems.
 #
-# Written by Fredrik Hederstierna 2015/2016/2017/2018
+# Written by Fredrik Hederstierna 2015/2016/2017/2018/2019
 #
 # This is free and unencumbered software released into the public domain.
 #
@@ -63,6 +63,8 @@
 # 1.3    Added RPM package support. Added static build support.
 #        Removed newlib FTP dependency. Added gitignore for archives.
 #        Thanks to Par L for contrib!
+# 1.3.1  Fixed regexp for interactive to accept any word starting with y/Y/n/N.
+#        Thanks to Magnus L for testing and ideas!
 #
 
 # Some packages possibly needed:
@@ -125,11 +127,11 @@ WGET_FTP_PROXY_EXTRA=${WGET_FTP_PROXY_EXTRA:-""}
 
 # Get user input what to build
 
-printf "GNU Toolchain BuildBuddy v1.3\n"
+printf "GNU Toolchain BuildBuddy v1.3.1\n"
 printf "HTTP proxy for wget: $WGET_HTTP_PROXY_EXTRA\n"
 printf "FTP proxy for wget:  $WGET_FTP_PROXY_EXTRA\n"
 printf "Entering information for requested build:\n"
-if [[ $INTERACTIVE =~ ^[Yy]$ ]]
+if [[ $INTERACTIVE =~ ^[Yy].*$ ]]
 then
   INTERACTIVE="Yes"
 else
@@ -167,7 +169,7 @@ then
   printf "\n"
 fi
 BUILD_GDB="${BUILD_GDB:-$BUILD_GDB_DEFAULT}"
-if [[ $BUILD_GDB =~ ^[Yy]$ ]]
+if [[ $BUILD_GDB =~ ^[Yy].*$ ]]
 then
   BUILD_GDB="Yes"
 else
@@ -187,7 +189,7 @@ then
   printf "\n"
 fi
 BUILD_RPM="${BUILD_RPM:-$BUILD_RPM_DEFAULT}"
-if [[ $BUILD_RPM =~ ^[Yy]$ ]]
+if [[ $BUILD_RPM =~ ^[Yy].*$ ]]
 then
   BUILD_RPM="Yes"
 else
@@ -207,7 +209,7 @@ then
   printf "\n"
 fi
 SUDO_INSTALL="${SUDO_INSTALL:-$SUDO_INSTALL_DEFAULT}"
-if [[ $SUDO_INSTALL =~ ^[Yy]$ ]]
+if [[ $SUDO_INSTALL =~ ^[Yy].*$ ]]
 then
   SUDO_INSTALL="Yes"
   SUDO="sudo"
@@ -220,7 +222,7 @@ echo -e "Make install with sudo: $SUDO_INSTALL"
 # Check multilib
 
 ENABLE_MULTILIB=${ENABLE_MULTILIB:-"Y"}
-if [[ $ENABLE_MULTILIB =~ ^[Yy]$ ]]
+if [[ $ENABLE_MULTILIB =~ ^[Yy].*$ ]]
 then
   MULTILIB="--enable-multilib"
 else
@@ -337,7 +339,7 @@ then
   printf "\n"
 fi
 HARDFLOAT="${HARDFLOAT:-$HARDFLOAT_DEFAULT}"
-if [[ $HARDFLOAT =~ ^[Yy]$ ]]
+if [[ $HARDFLOAT =~ ^[Yy].*$ ]]
 then
   HARDFLOAT="Yes"
   FLOAT="hardfloat"
@@ -359,7 +361,7 @@ then
   printf "\n"
 fi
 STATIC="${STATIC:-$STATIC_DEFAULT}"
-if [[ $STATIC =~ ^[Yy]$ ]]
+if [[ $STATIC =~ ^[Yy].*$ ]]
 then
   STATIC="Yes"
   STATIC_COMPILE_ARG="-static"
@@ -394,7 +396,7 @@ then
   printf "\n"
 fi
 APPLY_PATCH="${APPLY_PATCH:-$APPLY_PATCH_DEFAULT}"
-if [[ $APPLY_PATCH =~ ^[Yy]$ ]]
+if [[ $APPLY_PATCH =~ ^[Yy].*$ ]]
 then
   APPLY_PATCH="Yes"
 else
@@ -686,5 +688,5 @@ if [[ $BUILD_RPM == "Yes" ]]
 then
   echo -e "Building the RPM package...(and deb)"
   rpmbuild --define "name $PACKAGE_NAME" --define "deploy_dir $PWD/$DEST_PATH" --define "os_install_dir $DEST_PATH" --buildroot="/tmp/RPM-BUILDROOT/$PACKAGE_NAME" --nocheck -bb rpm.spec
-  fakeroot alien --fixperms --verbose -k x86_64/$PACKAGE_NAME-1.0-1.x86_64.rpm
+  fakeroot alien --to-deb --fixperms --verbose -k x86_64/$PACKAGE_NAME-1.0-1.x86_64.rpm
 fi
