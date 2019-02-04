@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# GNU Toolchain Build Buddy v1.3.1
+# GNU Toolchain Build Buddy v1.3.2
 #
 # Simple wizard to download, configure and build the GNU toolchain
 # targeting especially bare-metal cross-compilers for embedded systems.
@@ -65,6 +65,7 @@
 #        Thanks to Par L for contrib!
 # 1.3.1  Fixed regexp for interactive to accept any word starting with y/Y/n/N.
 #        Thanks to Magnus L for testing and ideas!
+# 1.3.2  Made parallel make optional.
 #
 
 # Some packages possibly needed:
@@ -127,7 +128,7 @@ WGET_FTP_PROXY_EXTRA=${WGET_FTP_PROXY_EXTRA:-""}
 
 # Get user input what to build
 
-printf "GNU Toolchain BuildBuddy v1.3.1\n"
+printf "GNU Toolchain BuildBuddy v1.3.2\n"
 printf "HTTP proxy for wget: $WGET_HTTP_PROXY_EXTRA\n"
 printf "FTP proxy for wget:  $WGET_FTP_PROXY_EXTRA\n"
 printf "Entering information for requested build:\n"
@@ -230,13 +231,25 @@ else
 fi
 echo -e "Multilib: $ENABLE_MULTILIB"
 
+# Check parallel make
+
 # Get max CPU cores to parallelize make
 # If this causes problems, just set PARALLEL_EXE=""
 # Sometimes I've observed that gcc-build just stops too early without error
 
 NPROCESS=`getconf _NPROCESSORS_ONLN`
 NTHREAD=$(($NPROCESS*2))
-PARALLEL_EXE="--jobs=$NTHREAD --max-load=$NTHREAD"
+
+PARALLEL_MAKE=${PARALLEL_MAKE:-"Y"}
+if [[ $PARALLEL_MAKE =~ ^[Yy].*$ ]]
+then
+  PARALLEL_MAKE="Yes"
+  PARALLEL_EXE="--jobs=$NTHREAD --max-load=$NTHREAD"
+else
+  PARALLEL_MAKE="No"
+  PARALLEL_EXE=""
+fi
+echo -e "Parallel make: $PARALLEL_MAKE"
 
 # Set some script generated local variables to empty
 
