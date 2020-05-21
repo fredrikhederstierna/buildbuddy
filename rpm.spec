@@ -8,6 +8,8 @@ URL:            http://www.sau.no
 %define __spec_install_post /usr/lib/rpm/brp-compress
 %define __os_install_post /usr/lib/rpm/brp-compress
 %define _rpmdir .
+%define _source_payload w9.gzdio
+%define _binary_payload w9.gzdio
 
 %description
 Buildbuddy toolchain for building firmware.

@@ -69,6 +69,8 @@ VERSION="1.3.3"
 #        Thanks to Magnus L for testing and ideas!
 # 1.3.2  Made parallel make optional.
 # 1.3.3  Added write to a build config file.
+# 1.3.4  Fixed that deb-package will use gzip, and not xz at default internal
+#        compression method, since some other tools might have problems with xz.
 #
 
 # Some packages possibly needed:
@@ -116,6 +118,7 @@ HARDFLOAT_DEFAULT=${HARDFLOAT_DEFAULT:-"Y"}
 STATIC_DEFAULT=${STATIC_DEFAULT:-"N"}
 BUILD_GDB_DEFAULT=${BUILD_GDB_DEFAULT:-"Y"}
 BUILD_RPM_DEFAULT=${BUILD_RPM_DEFAULT:-"N"}
+BUILD_RPM_REPACKAGE_GZIP_DEFAULT=${BUILD_RPM_REPACKAGE_GZIP_DEFAULT:-"N"}
 SUDO_INSTALL_DEFAULT=${SUDO_INSTALL_DEFAULT:-"Y"}
 APPLY_PATCH_DEFAULT=${APPLY_PATCH_DEFAULT:-"Y"}
 
@@ -200,6 +203,26 @@ else
   BUILD_RPM="No"
 fi
 echo -e "Build RPM: $BUILD_RPM"
+
+# Repackage RPM/DEB to gzip?
+
+printf "Should RPM use gzip(not xz)? [$BUILD_RPM_REPACKAGE_GZIP_DEFAULT]:"
+if [[ $INTERACTIVE == "Yes" ]]
+then
+  read -r -n1 -d '' BUILD_RPM_REPACKAGE_GZIP
+fi
+if [[ $BUILD_RPM_REPACKAGE_GZIP != "" ]]
+then
+  printf "\n"
+fi
+BUILD_RPMREPACKAGE_GZIP="${BUILD_RPM_REPACKAGE_GZIP:-$BUILD_RPM_REPACKAGE_GZIP_DEFAULT}"
+if [[ $BUILD_RPM_REPACKAGE_GZIP =~ ^[Yy].*$ ]]
+then
+  BUILD_RPM_REPACKAGE_GZIP="Yes"
+else
+  BUILD_RPM_REPACKAGE_GZIP="No"
+fi
+echo -e "Build RPM use gzip: $BUILD_RPM_REPACKAGE_GZIP"
 
 # Superuser execution of make install
 
@@ -479,6 +502,7 @@ echo "HARDFLOAT=\"$HARDFLOAT\"" >> $BUILD_CONFIG_FILENAME
 echo "STATIC=\"$STATIC\""       >> $BUILD_CONFIG_FILENAME
 echo "BUILD_GDB=\"$BUILD_GDB\"" >> $BUILD_CONFIG_FILENAME
 echo "BUILD_RPM=\"$BUILD_RPM\"" >> $BUILD_CONFIG_FILENAME
+echo "BUILD_RPM_REPACKAGE_GZIP=\"$BUILD_RPM_REPACKAGE_GZIP\"" >> $BUILD_CONFIG_FILENAME
 echo "SUDO_INSTALL=\"$SUDO_INSTALL\"" >> $BUILD_CONFIG_FILENAME
 echo "APPLY_PATCH=\"$APPLY_PATCH\""   >> $BUILD_CONFIG_FILENAME
 echo "DOWNLOAD_GNU_SERVER=\"$DOWNLOAD_GNU_SERVER\""       >> $BUILD_CONFIG_FILENAME
@@ -733,7 +757,23 @@ echo -e "Build config written to file: " $BUILD_CONFIG_FILENAME
 
 if [[ $BUILD_RPM == "Yes" ]]
 then
-  echo -e "Building the RPM package...(and deb)"
+  echo -e "Building the RPM and DEB packages..."
+  rm -rf /tmp/RPM-BUILDROOT/$PACKAGE_NAME
   rpmbuild --define "name $PACKAGE_NAME" --define "deploy_dir $PWD/$DEST_PATH" --define "os_install_dir $DEST_PATH" --buildroot="/tmp/RPM-BUILDROOT/$PACKAGE_NAME" --nocheck -bb rpm.spec
-  fakeroot alien --to-deb --fixperms --verbose -k x86_64/$PACKAGE_NAME-1.0-1.x86_64.rpm
+  echo -e "List content compression of the RPM package:"
+  rpm -qp --qf '%{PAYLOADCOMPRESSOR}\n' x86_64/$PACKAGE_NAME-1.0-1.x86_64.rpm
+  echo -e "Building the DEB package using default compression..."
+  fakeroot alien --to-deb --fixperms -k x86_64/$PACKAGE_NAME-1.0-1.x86_64.rpm
+  echo -e "List contents of the DEB file:"
+  ar t "$PACKAGE_NAME"_1.0-1_amd64.deb
+  if [[ $BUILD_RPM_REPACKAGE_GZIP == "Yes" ]]
+  then
+    echo -e "Repackaging DEB file and force compression to gzip (not xz)..."
+    dpkg-deb -R "$PACKAGE_NAME"_1.0-1_amd64.deb tmp
+    rm "$PACKAGE_NAME"_1.0-1_amd64.deb
+    fakeroot dpkg-deb -Zgzip -b tmp "$PACKAGE_NAME"_1.0-1_amd64.deb
+    rm -rf tmp
+    echo -e "List contents of the repackaged DEB file:"
+    ar t "$PACKAGE_NAME"_1.0-1_amd64.deb
+  fi
 fi
