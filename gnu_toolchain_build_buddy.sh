@@ -71,6 +71,7 @@ VERSION="1.3.3"
 # 1.3.3  Added write to a build config file.
 # 1.3.4  Fixed that deb-package will use gzip, and not xz at default internal
 #        compression method, since some other tools might have problems with xz.
+# 1.3.5  Removed unnecessary BINUTILS is built inside GDB.
 #
 
 # Some packages possibly needed:
@@ -83,6 +84,11 @@ VERSION="1.3.3"
 #   texinfo
 #   libncurses-dev
 #   xz
+#   bison
+#   flex
+# From GDB 9.3 also might use
+#   libipt-dev
+#   libbabeltrace-ctf-dev
 #
 # From GCC 5.3 also this seems needed:
 #   libisl-dev
@@ -714,7 +720,7 @@ if [[ $BUILD_GDB == "Yes" ]]
 then
   cd ../gdb
   TIMESTAMP_BUILD_GDB_START=$SECONDS
-  "../../$GDB_DIR/configure" --target="$TARGET" --prefix="$DEST" --with-guile=no
+  "../../$GDB_DIR/configure" --target="$TARGET" --prefix="$DEST" --with-guile=no --disable-binutils --disable-ld --disable-gold --disable-gas --disable-sim --disable-gprof --with-separate-debug-dir=/usr/lib/debug
   make $PARALLEL_EXE --print-directory all MAKEINFO=true
   $SUDO make install
   TIMESTAMP_BUILD_GDB_END=$SECONDS
