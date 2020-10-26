@@ -1,6 +1,6 @@
 #!/bin/bash
 
-VERSION="1.3.3"
+VERSION="1.3.6"
 
 # GNU Toolchain Build Buddy
 #
@@ -72,6 +72,7 @@ VERSION="1.3.3"
 # 1.3.4  Fixed that deb-package will use gzip, and not xz at default internal
 #        compression method, since some other tools might have problems with xz.
 # 1.3.5  Removed unnecessary BINUTILS is built inside GDB.
+# 1.3.6  Added option to build GDB simulator.
 #
 
 # Some packages possibly needed:
@@ -123,6 +124,7 @@ DEST_PATH_SUFFIX_DEFAULT=${DEST_PATH_SUFFIX_DEFAULT:-""}
 HARDFLOAT_DEFAULT=${HARDFLOAT_DEFAULT:-"Y"}
 STATIC_DEFAULT=${STATIC_DEFAULT:-"N"}
 BUILD_GDB_DEFAULT=${BUILD_GDB_DEFAULT:-"Y"}
+BUILD_GDB_SIMULATOR_DEFAULT=${BUILD_GDB_SIMULATOR_DEFAULT:-"Y"}
 BUILD_RPM_DEFAULT=${BUILD_RPM_DEFAULT:-"N"}
 BUILD_RPM_REPACKAGE_GZIP_DEFAULT=${BUILD_RPM_REPACKAGE_GZIP_DEFAULT:-"N"}
 SUDO_INSTALL_DEFAULT=${SUDO_INSTALL_DEFAULT:-"Y"}
@@ -189,6 +191,26 @@ else
   BUILD_GDB="No"
 fi
 echo -e "Build GDB: $BUILD_GDB"
+
+# Build GDB simulator?
+
+printf "Should GDB Simulator be built? [$BUILD_GDB_SIMULATOR_DEFAULT]:"
+if [[ $INTERACTIVE == "Yes" ]]
+then
+  read -r -n1 -d '' BUILD_GDB_SIMULATOR
+fi
+if [[ $BUILD_GDB_SIMULATOR != "" ]]
+then
+  printf "\n"
+fi
+BUILD_GDB_SIMULATOR="${BUILD_GDB_SIMULATOR:-$BUILD_GDB_SIMULATOR_DEFAULT}"
+if [[ $BUILD_GDB_SIMULATOR =~ ^[Yy].*$ ]]
+then
+  BUILD_GDB_SIMULATOR="Yes"
+else
+  BUILD_GDB_SIMULATOR="No"
+fi
+echo -e "Build GDB Simulator: $BUILD_GDB_SIMULATOR"
 
 # Build RPM?
 
@@ -482,6 +504,13 @@ then
   fi
 fi
 
+# Check if GDB simulator should be built
+
+if [[ $BUILD_GDB_SIMULATOR == "Yes" ]]
+then
+  EXTRA_GDB_CONFIGURE_OPTS="--enable-sim"
+fi
+
 # Set rwx access
 
 umask 022
@@ -507,6 +536,7 @@ echo "DEST_PATH_SUFFIX=\"$DEST_PATH_SUFFIX\"" >> $BUILD_CONFIG_FILENAME
 echo "HARDFLOAT=\"$HARDFLOAT\"" >> $BUILD_CONFIG_FILENAME
 echo "STATIC=\"$STATIC\""       >> $BUILD_CONFIG_FILENAME
 echo "BUILD_GDB=\"$BUILD_GDB\"" >> $BUILD_CONFIG_FILENAME
+echo "BUILD_GDB_SIMULATOR=\"$BUILD_GDB_SIMULATOR\"" >> $BUILD_CONFIG_FILENAME
 echo "BUILD_RPM=\"$BUILD_RPM\"" >> $BUILD_CONFIG_FILENAME
 echo "BUILD_RPM_REPACKAGE_GZIP=\"$BUILD_RPM_REPACKAGE_GZIP\"" >> $BUILD_CONFIG_FILENAME
 echo "SUDO_INSTALL=\"$SUDO_INSTALL\"" >> $BUILD_CONFIG_FILENAME
@@ -720,7 +750,7 @@ if [[ $BUILD_GDB == "Yes" ]]
 then
   cd ../gdb
   TIMESTAMP_BUILD_GDB_START=$SECONDS
-  "../../$GDB_DIR/configure" --target="$TARGET" --prefix="$DEST" --with-guile=no --disable-binutils --disable-ld --disable-gold --disable-gas --disable-sim --disable-gprof --with-separate-debug-dir=/usr/lib/debug
+  "../../$GDB_DIR/configure" --target="$TARGET" --prefix="$DEST" --with-guile=no --disable-binutils --disable-ld --disable-gold --disable-gas --disable-sim --disable-gprof $EXTRA_GDB_CONFIGURE_OPTS --with-separate-debug-dir=/usr/lib/debug
   make $PARALLEL_EXE --print-directory all MAKEINFO=true
   $SUDO make install
   TIMESTAMP_BUILD_GDB_END=$SECONDS
