@@ -7,7 +7,7 @@ VERSION="1.3.6"
 # Simple wizard to download, configure and build the GNU toolchain
 # targeting especially bare-metal cross-compilers for embedded systems.
 #
-# Written by Fredrik Hederstierna 2015/2016/2017/2018/2019
+# Written by Fredrik Hederstierna 2015/2016/2017/2018/2019/2020/2021
 #
 # This is free and unencumbered software released into the public domain.
 #
