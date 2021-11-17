@@ -73,6 +73,7 @@ VERSION="1.3.6"
 #        compression method, since some other tools might have problems with xz.
 # 1.3.5  Removed unnecessary BINUTILS is built inside GDB.
 # 1.3.6  Added option to build GDB simulator.
+# 1.3.7  Added install dependency shell script, including all packages below.
 #
 
 # Some packages possibly needed:
@@ -84,7 +85,7 @@ VERSION="1.3.6"
 # GDB also might use
 #   texinfo
 #   libncurses-dev
-#   xz
+#   xz-utils
 #   bison
 #   flex
 # From GDB 9.3 also might use
@@ -93,6 +94,10 @@ VERSION="1.3.6"
 #
 # From GCC 5.3 also this seems needed:
 #   libisl-dev
+#
+# If using rpm build also needed:
+#   rpm
+#   alien
 
 # BUGS:
 # Binutils 2.25.1 assembler does not support 'cortex-m7' cpu option.
