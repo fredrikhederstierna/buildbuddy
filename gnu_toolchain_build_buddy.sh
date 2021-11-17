@@ -1,6 +1,6 @@
 #!/bin/bash
 
-VERSION="1.3.6"
+VERSION="1.3.8"
 
 # GNU Toolchain Build Buddy
 #
@@ -74,6 +74,7 @@ VERSION="1.3.6"
 # 1.3.5  Removed unnecessary BINUTILS is built inside GDB.
 # 1.3.6  Added option to build GDB simulator.
 # 1.3.7  Added install dependency shell script, including all packages below.
+# 1.3.8  Removed build_id links in the rpmbuild packages.
 #
 
 # Some packages possibly needed:

@@ -11,6 +11,14 @@ URL:            http://www.sau.no
 %define _source_payload w9.gzdio
 %define _binary_payload w9.gzdio
 
+# Do not generate build_id links to prevent conflicts when installing
+# multiple toolchain packages on the same machine with similar included
+# compiler versions alongside each other. The build_id is probably not
+# needed since this package does not have any corresponding debug info
+# packages built.
+%define _build_id_links none
+%undefine _missing_build_ids_terminate_build
+
 %description
 Buildbuddy toolchain for building firmware.
 %{name}
