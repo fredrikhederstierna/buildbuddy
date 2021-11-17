@@ -1,6 +1,6 @@
 #!/bin/bash
 
-VERSION="1.3.8"
+VERSION="1.3.9"
 
 # GNU Toolchain Build Buddy
 #
@@ -75,6 +75,7 @@ VERSION="1.3.8"
 # 1.3.6  Added option to build GDB simulator.
 # 1.3.7  Added install dependency shell script, including all packages below.
 # 1.3.8  Removed build_id links in the rpmbuild packages.
+# 1.3.9  Build RPM in current folder, if no write access in user root folder.
 #
 
 # Some packages possibly needed:
@@ -801,7 +802,8 @@ if [[ $BUILD_RPM == "Yes" ]]
 then
   echo -e "Building the RPM and DEB packages..."
   rm -rf /tmp/RPM-BUILDROOT/$PACKAGE_NAME
-  rpmbuild --define "name $PACKAGE_NAME" --define "deploy_dir $PWD/$DEST_PATH" --define "os_install_dir $DEST_PATH" --buildroot="/tmp/RPM-BUILDROOT/$PACKAGE_NAME" --nocheck -bb rpm.spec
+  mkdir -p rpmbuild/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
+  rpmbuild --define "name $PACKAGE_NAME" --define "deploy_dir $PWD/$DEST_PATH" --define "os_install_dir $DEST_PATH" --define "_topdir $PWD/rpmbuild" --buildroot="/tmp/RPM-BUILDROOT/$PACKAGE_NAME" --nocheck -bb rpm.spec
   echo -e "List content compression of the RPM package:"
   rpm -qp --qf '%{PAYLOADCOMPRESSOR}\n' x86_64/$PACKAGE_NAME-1.0-1.x86_64.rpm
   echo -e "Building the DEB package using default compression..."
