@@ -1,26 +1,27 @@
 #!/bin/bash
 
 # Example non-interactive toolchain build argument list
-# Fredrik Hederstierna 2019
+# Fredrik Hederstierna 2021
 
 INTERACTIVE="No"
 TARGET="arm-none-eabi"
 WITH_CPU="cortex-m4"
 ENABLE_MULTILIB="Y"
 PARALLEL_MAKE="Y"
-LANGUAGES="c"
-BINUTILS_VERSION="2.33.1"
-GCC_VERSION="10.1.0"
-NEWLIB_VERSION="3.3.0"
-GDB_VERSION="9.1"
+LANGUAGES="c,c++"
+BINUTILS_VERSION="2.37"
+GCC_VERSION="11.2.0"
+NEWLIB_VERSION="4.1.0"
+GDB_VERSION="11.1"
 DEST_PATH="/opt/gcc"
-DEST_PATH_SUFFIX="rpm"
+DEST_PATH_SUFFIX=""
 HARDFLOAT="N"
 STATIC="Y"
-BUILD_GDB="N"
+BUILD_GDB="Y"
+BUILD_GDB_SIMULATOR="N"
 BUILD_RPM="Y"
 BUILD_RPM_REPACKAGE_GZIP="Y"
-SUDO_INSTALL="Y"
+SUDO_INSTALL="N"
 APPLY_PATCH="Y"
 DOWNLOAD_GNU_SERVER="http://ftp.gnu.org/gnu"
 DOWNLOAD_NEWLIB_SERVER="http://sourceware.org/pub/newlib"
