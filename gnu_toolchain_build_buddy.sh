@@ -1,6 +1,6 @@
 #!/bin/bash
 
-VERSION="1.3.9"
+VERSION="1.4.0"
 
 # GNU Toolchain Build Buddy
 #
@@ -76,6 +76,9 @@ VERSION="1.3.9"
 # 1.3.7  Added install dependency shell script, including all packages below.
 # 1.3.8  Removed build_id links in the rpmbuild packages.
 # 1.3.9  Build RPM in current folder, if no write access in user root folder.
+# 1.4.0  Added new option NANO_LIBS to be able to build the built-in compiler
+#        libraries for newlib libc and libstdc++ optimized for small size.
+#        For example has the nano-version of libstdc++ no exception support.
 #
 
 # Some packages possibly needed:
@@ -129,6 +132,7 @@ DEST_PATH_DEFAULT=${DEST_PATH_DEFAULT:-"/usr/local/gcc"}
 DEST_PATH_SUFFIX_DEFAULT=${DEST_PATH_SUFFIX_DEFAULT:-""}
 
 HARDFLOAT_DEFAULT=${HARDFLOAT_DEFAULT:-"Y"}
+NANO_LIBS_DEFAULT=${NANO_LIBS_DEFAULT:-"Y"}
 STATIC_DEFAULT=${STATIC_DEFAULT:-"N"}
 BUILD_GDB_DEFAULT=${BUILD_GDB_DEFAULT:-"Y"}
 BUILD_GDB_SIMULATOR_DEFAULT=${BUILD_GDB_SIMULATOR_DEFAULT:-"Y"}
@@ -423,6 +427,26 @@ else
 fi
 echo -e "\nUse Hardfloat: $HARDFLOAT"
 
+# Set nano libs config
+
+printf "Should GCC be built with using libs optimized for size? [$NANO_LIBS_DEFAULT]: "
+if [[ $INTERACTIVE == "Yes" ]]
+then
+  read -r -n1 -d '' NANO_LIBS
+fi
+if [[ $NANO_LIBS != "" ]]
+then
+  printf "\n"
+fi
+NANO_LIBS="${NANO_LIBS:-$NANO_LIBS_DEFAULT}"
+if [[ $NANO_LIBS =~ ^[Yy].*$ ]]
+then
+  NANO_LIBS="Yes"
+else
+  NANO_LIBS="No"
+fi
+echo -e "\nUse libs optimized for size: $NANO_LIBS"
+
 # Set static config
 
 printf "Should GCC be built static? [$STATIC_DEFAULT]: "
@@ -541,6 +565,7 @@ echo "GDB_VERSION=\"$GDB_VERSION\""           >> $BUILD_CONFIG_FILENAME
 echo "DEST_PATH=\"$DEST_PATH\""               >> $BUILD_CONFIG_FILENAME
 echo "DEST_PATH_SUFFIX=\"$DEST_PATH_SUFFIX\"" >> $BUILD_CONFIG_FILENAME
 echo "HARDFLOAT=\"$HARDFLOAT\"" >> $BUILD_CONFIG_FILENAME
+echo "NANO_LIBS=\"$NANO_LIBS\"" >> $BUILD_CONFIG_FILENAME
 echo "STATIC=\"$STATIC\""       >> $BUILD_CONFIG_FILENAME
 echo "BUILD_GDB=\"$BUILD_GDB\"" >> $BUILD_CONFIG_FILENAME
 echo "BUILD_GDB_SIMULATOR=\"$BUILD_GDB_SIMULATOR\"" >> $BUILD_CONFIG_FILENAME
@@ -739,14 +764,27 @@ then
   fi
 fi
 
+# Extra optimization options for small size
+
+if [[ $NANO_LIBS == "Yes" ]]
+then
+  NANO_LIBS_OPTS="--disable-decimal-float --disable-libffi --disable-libgomp --disable-libmudflap --disable-libquadmath --disable-libstdcxx-pch --disable-libstdcxx-verbose --disable-shared --disable-threads --disable-tls --disable-nls --disable-libssp --disable-newlib-supplied-syscalls --disable-newlib-fvwrite-in-streamio --disable-newlib-fseek-optimization --disable-newlib-wide-orient --disable-newlib-unbuf-stream-opt --enable-newlib-reent-small --enable-newlib-global-atexit --enable-newlib-nano-malloc --enable-newlib-nano-formatted-io --enable-lite-exit"
+  NANO_LIBS_CFLAGS="-g -Os -ffunction-sections -fdata-sections"
+  NANO_LIBS_CXXFLAGS="-g -Os -ffunction-sections -fdata-sections -fno-exceptions -fno-unwind-tables -fno-threadsafe-statics -fno-use-cxa-atexit"
+else
+  NANO_LIBS_OPTS=""
+  NANO_LIBS_CFLAGS="-g -O2 -ffunction-sections -fdata-sections"
+  NANO_LIBS_CXXFLAGS="-g -O2 -ffunction-sections -fdata-sections"
+fi
+
 # Build gcc
 
 cd ../gcc
 PATH="$DEST/bin:$PATH"
 TIMESTAMP_BUILD_GCC_START=$SECONDS
-"../../$GCC_DIR/configure" --enable-languages="$LANGUAGES" --target="$TARGET" --prefix="$DEST" $WITH_OPTS $TARGET_OPTS $WITH_ABI_OPTS $WITH_FLOAT_OPTS $DISABLE_OPTS $EXTRA_TARGET_OPTS $ENABLE_OPTS
-make CFLAGS='-std=gnu89' $PARALLEL_EXE LDFLAGS="-s $STATIC_COMPILE_ARG" all MAKEINFO=missing
-make CFLAGS='-std=gnu89' $PARALLEL_EXE LDFLAGS="-s $STATIC_COMPILE_ARG" all-gcc MAKEINFO=missing
+"../../$GCC_DIR/configure" --enable-languages="$LANGUAGES" --target="$TARGET" --prefix="$DEST" $WITH_OPTS $TARGET_OPTS $WITH_ABI_OPTS $WITH_FLOAT_OPTS $DISABLE_OPTS $EXTRA_TARGET_OPTS $ENABLE_OPTS $NANO_LIBS_OPTS
+make CFLAGS='-std=gnu89' CFLAGS_FOR_TARGET="$NANO_LIBS_CFLAGS" CXXFLAGS="$NANO_LIBS_CXXFLAGS" CXXFLAGS_FOR_TARGET="$NANO_LIBS_CXXFLAGS" $PARALLEL_EXE LDFLAGS="-s $STATIC_COMPILE_ARG" all MAKEINFO=missing
+make CFLAGS='-std=gnu89' CFLAGS_FOR_TARGET="$NANO_LIBS_CFLAGS" CXXFLAGS="$NANO_LIBS_CXXFLAGS" CXXFLAGS_FOR_TARGET="$NANO_LIBS_CXXFLAGS" $PARALLEL_EXE LDFLAGS="-s $STATIC_COMPILE_ARG" all-gcc MAKEINFO=missing
 $SUDO make install-gcc
 $SUDO make install
 TIMESTAMP_BUILD_GCC_END=$SECONDS
