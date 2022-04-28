@@ -1,13 +1,13 @@
 #!/bin/bash
 
-VERSION="1.4.0"
+VERSION="1.4.1"
 
 # GNU Toolchain Build Buddy
 #
 # Simple wizard to download, configure and build the GNU toolchain
 # targeting especially bare-metal cross-compilers for embedded systems.
 #
-# Written by Fredrik Hederstierna 2015/2016/2017/2018/2019/2020/2021
+# Written by Fredrik Hederstierna 2015/2016/2017/2018/2019/2020/2021/2022
 #
 # This is free and unencumbered software released into the public domain.
 #
@@ -79,6 +79,7 @@ VERSION="1.4.0"
 # 1.4.0  Added new option NANO_LIBS to be able to build the built-in compiler
 #        libraries for newlib libc and libstdc++ optimized for small size.
 #        For example has the nano-version of libstdc++ no exception support.
+# 1.4.1  Adding fix for LTO (Link Time Optimization) doesn't allow static libs.
 #
 
 # Some packages possibly needed:
@@ -134,6 +135,7 @@ DEST_PATH_SUFFIX_DEFAULT=${DEST_PATH_SUFFIX_DEFAULT:-""}
 HARDFLOAT_DEFAULT=${HARDFLOAT_DEFAULT:-"Y"}
 NANO_LIBS_DEFAULT=${NANO_LIBS_DEFAULT:-"Y"}
 STATIC_DEFAULT=${STATIC_DEFAULT:-"N"}
+LTO_DEFAULT=${LTO_DEFAULT:-"Y"}
 BUILD_GDB_DEFAULT=${BUILD_GDB_DEFAULT:-"Y"}
 BUILD_GDB_SIMULATOR_DEFAULT=${BUILD_GDB_SIMULATOR_DEFAULT:-"Y"}
 BUILD_RPM_DEFAULT=${BUILD_RPM_DEFAULT:-"N"}
@@ -471,6 +473,26 @@ else
 fi
 echo -e "\nUse Static: $STATIC"
 
+# Set LTO config
+
+printf "Should GCC be built with using libs support for LTO (Link Time Optimization)? [$LTO_DEFAULT]: "
+if [[ $INTERACTIVE == "Yes" ]]
+then
+  read -r -n1 -d '' LTO
+fi
+if [[ $LTO != "" ]]
+then
+  printf "\n"
+fi
+LTO="${LTO:-$LTO_DEFAULT}"
+if [[ $LTO =~ ^[Yy].*$ ]]
+then
+  LTO="Yes"
+else
+  LTO="No"
+fi
+echo -e "\nUse libs support for LTO: $LTO"
+
 # Set resulting destination path
 DEST="$DEST_PATH/$TARGET-toolchain-gcc-$GCC_VERSION-binutils-$BINUTILS_VERSION-newlib-$NEWLIB_VERSION-$FLOAT$DEST_PATH_SUFFIX"
 echo -e "Build toolchain into path: $DEST"
@@ -567,6 +589,7 @@ echo "DEST_PATH_SUFFIX=\"$DEST_PATH_SUFFIX\"" >> $BUILD_CONFIG_FILENAME
 echo "HARDFLOAT=\"$HARDFLOAT\"" >> $BUILD_CONFIG_FILENAME
 echo "NANO_LIBS=\"$NANO_LIBS\"" >> $BUILD_CONFIG_FILENAME
 echo "STATIC=\"$STATIC\""       >> $BUILD_CONFIG_FILENAME
+echo "LTO=\"$LTO\""             >> $BUILD_CONFIG_FILENAME
 echo "BUILD_GDB=\"$BUILD_GDB\"" >> $BUILD_CONFIG_FILENAME
 echo "BUILD_GDB_SIMULATOR=\"$BUILD_GDB_SIMULATOR\"" >> $BUILD_CONFIG_FILENAME
 echo "BUILD_RPM=\"$BUILD_RPM\"" >> $BUILD_CONFIG_FILENAME
@@ -769,12 +792,25 @@ fi
 if [[ $NANO_LIBS == "Yes" ]]
 then
   NANO_LIBS_OPTS="--disable-decimal-float --disable-libffi --disable-libgomp --disable-libmudflap --disable-libquadmath --disable-libstdcxx-pch --disable-libstdcxx-verbose --disable-shared --disable-threads --disable-tls --disable-nls --disable-libssp --disable-newlib-supplied-syscalls --disable-newlib-fvwrite-in-streamio --disable-newlib-fseek-optimization --disable-newlib-wide-orient --disable-newlib-unbuf-stream-opt --enable-newlib-reent-small --enable-newlib-global-atexit --enable-newlib-nano-malloc --enable-newlib-nano-formatted-io --enable-lite-exit"
-  NANO_LIBS_CFLAGS="-g -Os -ffunction-sections -fdata-sections"
-  NANO_LIBS_CXXFLAGS="-g -Os -ffunction-sections -fdata-sections -fno-exceptions -fno-unwind-tables -fno-threadsafe-statics -fno-use-cxa-atexit"
+  NANO_LIBS_CFLAGS="-DPREFER_SIZE_OVER_SPEED=1 -Os -ffunction-sections -fdata-sections"
+  NANO_LIBS_CXXFLAGS="-DPREFER_SIZE_OVER_SPEED=1 -Os -ffunction-sections -fdata-sections -fno-exceptions -fno-unwind-tables -fno-threadsafe-statics -fno-use-cxa-atexit"
 else
   NANO_LIBS_OPTS=""
   NANO_LIBS_CFLAGS="-g -O2 -ffunction-sections -fdata-sections"
   NANO_LIBS_CXXFLAGS="-g -O2 -ffunction-sections -fdata-sections"
+fi
+
+# Extra options for LTO (Link Time Optimization)
+# GCC target libraries cannot be static compiled if using LTO.
+
+if [[ $LTO == "Yes" ]]
+then
+  STATIC_COMPILE_ARG=""
+  LTO_CFLAGS="-flto -ffat-lto-objects"
+  LTO_CXXFLAGS="-flto -ffat-lto-objects"
+else
+  LTO_CFLAGS=""
+  LTO_CXXFLAGS=""
 fi
 
 # Build gcc
@@ -783,8 +819,8 @@ cd ../gcc
 PATH="$DEST/bin:$PATH"
 TIMESTAMP_BUILD_GCC_START=$SECONDS
 "../../$GCC_DIR/configure" --enable-languages="$LANGUAGES" --target="$TARGET" --prefix="$DEST" $WITH_OPTS $TARGET_OPTS $WITH_ABI_OPTS $WITH_FLOAT_OPTS $DISABLE_OPTS $EXTRA_TARGET_OPTS $ENABLE_OPTS $NANO_LIBS_OPTS
-make CFLAGS='-std=gnu89' CFLAGS_FOR_TARGET="$NANO_LIBS_CFLAGS" CXXFLAGS="$NANO_LIBS_CXXFLAGS" CXXFLAGS_FOR_TARGET="$NANO_LIBS_CXXFLAGS" $PARALLEL_EXE LDFLAGS="-s $STATIC_COMPILE_ARG" all MAKEINFO=missing
-make CFLAGS='-std=gnu89' CFLAGS_FOR_TARGET="$NANO_LIBS_CFLAGS" CXXFLAGS="$NANO_LIBS_CXXFLAGS" CXXFLAGS_FOR_TARGET="$NANO_LIBS_CXXFLAGS" $PARALLEL_EXE LDFLAGS="-s $STATIC_COMPILE_ARG" all-gcc MAKEINFO=missing
+make CFLAGS='-std=gnu89' CFLAGS_FOR_TARGET="$NANO_LIBS_CFLAGS $LTO_CFLAGS" CXXFLAGS="$NANO_LIBS_CXXFLAGS $LTO_CXXFLAGS" CXXFLAGS_FOR_TARGET="$NANO_LIBS_CXXFLAGS $LTO_CXXFLAGS" $PARALLEL_EXE LDFLAGS="-s $STATIC_COMPILE_ARG" all MAKEINFO=missing
+make CFLAGS='-std=gnu89' CFLAGS_FOR_TARGET="$NANO_LIBS_CFLAGS $LTO_CFLAGS" CXXFLAGS="$NANO_LIBS_CXXFLAGS $LTO_CXXFLAGS" CXXFLAGS_FOR_TARGET="$NANO_LIBS_CXXFLAGS $LTO_CXXFLAGS" $PARALLEL_EXE LDFLAGS="-s $STATIC_COMPILE_ARG" all-gcc MAKEINFO=missing
 $SUDO make install-gcc
 $SUDO make install
 TIMESTAMP_BUILD_GCC_END=$SECONDS
