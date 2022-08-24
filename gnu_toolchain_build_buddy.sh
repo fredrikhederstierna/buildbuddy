@@ -1,6 +1,6 @@
 #!/bin/bash
 
-VERSION="1.4.1"
+VERSION="1.4.2"
 
 # GNU Toolchain Build Buddy
 #
@@ -80,6 +80,8 @@ VERSION="1.4.1"
 #        libraries for newlib libc and libstdc++ optimized for small size.
 #        For example has the nano-version of libstdc++ no exception support.
 # 1.4.1  Adding fix for LTO (Link Time Optimization) doesn't allow static libs.
+# 1.4.2  Removed again MAKEINFO=missing for binutils, needed to compile very
+#        old versions, but newer version does not accept this option anymore.
 #
 
 # Some packages possibly needed:
@@ -743,11 +745,12 @@ SECONDS=0
 TIMESTAMP_BUILD_TOTAL_START=$SECONDS
 
 # Build binutils
+# (very old versions might need to add MAKEINFO=missing last in make command.)
 
 cd build/binutils
 TIMESTAMP_BUILD_BINUTILS_START=$SECONDS
 "../../$BINUTILS_DIR/configure" --target="$TARGET" --prefix="$DEST" --disable-nls
-make $PARALLEL_EXE LDFLAGS="-s $STATIC_COMPILE_ARG" all MAKEINFO=missing
+make $PARALLEL_EXE LDFLAGS="-s $STATIC_COMPILE_ARG" all
 $SUDO make install
 TIMESTAMP_BUILD_BINUTILS_END=$SECONDS
 
