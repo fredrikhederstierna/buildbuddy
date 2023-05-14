@@ -1,6 +1,6 @@
 #!/bin/bash
 
-VERSION="1.4.2"
+VERSION="1.4.3"
 
 # GNU Toolchain Build Buddy
 #
@@ -81,6 +81,8 @@ VERSION="1.4.2"
 #        For example has the nano-version of libstdc++ no exception support.
 # 1.4.1  Adding fix for LTO (Link Time Optimization) doesn't allow static libs.
 # 1.4.2  Removed again MAKEINFO=missing for binutils, needed to compile very
+#        old versions, but newer version does not accept this option anymore.
+# 1.4.3  Removed again MAKEINFO=missing for gcc aswell, needed to compile very
 #        old versions, but newer version does not accept this option anymore.
 #
 
@@ -817,13 +819,14 @@ else
 fi
 
 # Build gcc
+# (very old versions might need to add MAKEINFO=missing last in make all/all-gcc commands.)
 
 cd ../gcc
 PATH="$DEST/bin:$PATH"
 TIMESTAMP_BUILD_GCC_START=$SECONDS
 "../../$GCC_DIR/configure" --enable-languages="$LANGUAGES" --target="$TARGET" --prefix="$DEST" $WITH_OPTS $TARGET_OPTS $WITH_ABI_OPTS $WITH_FLOAT_OPTS $DISABLE_OPTS $EXTRA_TARGET_OPTS $ENABLE_OPTS $NANO_LIBS_OPTS
-make CFLAGS='-std=gnu89' CFLAGS_FOR_TARGET="$NANO_LIBS_CFLAGS $LTO_CFLAGS" CXXFLAGS="$NANO_LIBS_CXXFLAGS $LTO_CXXFLAGS" CXXFLAGS_FOR_TARGET="$NANO_LIBS_CXXFLAGS $LTO_CXXFLAGS" $PARALLEL_EXE LDFLAGS="-s $STATIC_COMPILE_ARG" all MAKEINFO=missing
-make CFLAGS='-std=gnu89' CFLAGS_FOR_TARGET="$NANO_LIBS_CFLAGS $LTO_CFLAGS" CXXFLAGS="$NANO_LIBS_CXXFLAGS $LTO_CXXFLAGS" CXXFLAGS_FOR_TARGET="$NANO_LIBS_CXXFLAGS $LTO_CXXFLAGS" $PARALLEL_EXE LDFLAGS="-s $STATIC_COMPILE_ARG" all-gcc MAKEINFO=missing
+make CFLAGS='-std=gnu89' CFLAGS_FOR_TARGET="$NANO_LIBS_CFLAGS $LTO_CFLAGS" CXXFLAGS="$NANO_LIBS_CXXFLAGS $LTO_CXXFLAGS" CXXFLAGS_FOR_TARGET="$NANO_LIBS_CXXFLAGS $LTO_CXXFLAGS" $PARALLEL_EXE LDFLAGS="-s $STATIC_COMPILE_ARG" all
+make CFLAGS='-std=gnu89' CFLAGS_FOR_TARGET="$NANO_LIBS_CFLAGS $LTO_CFLAGS" CXXFLAGS="$NANO_LIBS_CXXFLAGS $LTO_CXXFLAGS" CXXFLAGS_FOR_TARGET="$NANO_LIBS_CXXFLAGS $LTO_CXXFLAGS" $PARALLEL_EXE LDFLAGS="-s $STATIC_COMPILE_ARG" all-gcc
 $SUDO make install-gcc
 $SUDO make install
 TIMESTAMP_BUILD_GCC_END=$SECONDS

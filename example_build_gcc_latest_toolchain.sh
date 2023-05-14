@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Example non-interactive toolchain build argument list
-# Fredrik Hederstierna 2021/2022
+# Fredrik Hederstierna 2021/2022/2023
 
 INTERACTIVE="No"
 TARGET="arm-none-eabi"
@@ -9,10 +9,10 @@ WITH_CPU="cortex-m4"
 ENABLE_MULTILIB="Y"
 PARALLEL_MAKE="Y"
 LANGUAGES="c,c++"
-BINUTILS_VERSION="2.39"
-GCC_VERSION="12.2.0"
-NEWLIB_VERSION="4.2.0.20211231"
-GDB_VERSION="12.1"
+BINUTILS_VERSION="2.40"
+GCC_VERSION="13.1.0"
+NEWLIB_VERSION="4.3.0.20230120"
+GDB_VERSION="13.1"
 DEST_PATH="/opt/gcc"
 DEST_PATH_SUFFIX=""
 HARDFLOAT="N"
