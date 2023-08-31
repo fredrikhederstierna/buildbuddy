@@ -1,13 +1,13 @@
 #!/bin/bash
 
-VERSION="1.4.3"
+VERSION="1.4.4"
 
 # GNU Toolchain Build Buddy
 #
 # Simple wizard to download, configure and build the GNU toolchain
 # targeting especially bare-metal cross-compilers for embedded systems.
 #
-# Written by Fredrik Hederstierna 2015/2016/2017/2018/2019/2020/2021/2022
+# Written by Fredrik Hederstierna 2015/2016/2017/2018/2019/2020/2021/2022/2023
 #
 # This is free and unencumbered software released into the public domain.
 #
@@ -84,6 +84,7 @@ VERSION="1.4.3"
 #        old versions, but newer version does not accept this option anymore.
 # 1.4.3  Removed again MAKEINFO=missing for gcc aswell, needed to compile very
 #        old versions, but newer version does not accept this option anymore.
+# 1.4.4  Changed default hardfloat FPU opts from 'fpv4-sp-d16' to 'fp-armv8'.
 #
 
 # Some packages possibly needed:
@@ -783,10 +784,12 @@ then
     EXTRA_TARGET_OPTS="$MULTILIB --enable-targets=arm-elf"
     WITH_ABI_OPTS="--with-cpu=$WITH_CPU"
   fi
-
   if [[ $HARDFLOAT == "Yes" ]]
   then
-    WITH_FLOAT_OPTS="--with-float=hard --with-fpu=fpv4-sp-d16"
+    # Use armv4 floats aiming eg Cortex-M4/M7
+    #WITH_FLOAT_OPTS="--with-float=hard --with-fpu=fpv4-sp-d16"
+    # Use armv5 floats aiming eg Cortex-M23/M33
+    WITH_FLOAT_OPTS="--with-float=hard --with-fpu=fp-armv8"
   else
     WITH_FLOAT_OPTS="--with-float=soft"
   fi
