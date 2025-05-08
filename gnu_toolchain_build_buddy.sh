@@ -1,13 +1,13 @@
 #!/bin/bash
 
-VERSION="1.4.4"
+VERSION="1.4.5"
 
 # GNU Toolchain Build Buddy
 #
 # Simple wizard to download, configure and build the GNU toolchain
 # targeting especially bare-metal cross-compilers for embedded systems.
 #
-# Written by Fredrik Hederstierna 2015/2016/2017/2018/2019/2020/2021/2022/2023
+# Written by Fredrik Hederstierna 2015/2016/2017/2018/2019/2020/2021/2022/2023/2024/2025
 #
 # This is free and unencumbered software released into the public domain.
 #
@@ -85,6 +85,10 @@ VERSION="1.4.4"
 # 1.4.3  Removed again MAKEINFO=missing for gcc aswell, needed to compile very
 #        old versions, but newer version does not accept this option anymore.
 # 1.4.4  Changed default hardfloat FPU opts from 'fpv4-sp-d16' to 'fp-armv8'.
+# 1.4.5  Changed default hardfloat FPU opts from 'fp-armv8' to 'fpv5-sp-d16'.
+#        The armv8 did enable f64 HW double support. It seems like is chosing
+#        targets Cortex-M4F/M7 fpv4 is good, and for eg M33/M55 use fpv5.
+#        Added some experimental stuff for RISC-V target.
 #
 
 # Some packages possibly needed:
@@ -789,10 +793,28 @@ then
     # Use armv4 floats aiming eg Cortex-M4/M7
     #WITH_FLOAT_OPTS="--with-float=hard --with-fpu=fpv4-sp-d16"
     # Use armv5 floats aiming eg Cortex-M23/M33
-    WITH_FLOAT_OPTS="--with-float=hard --with-fpu=fp-armv8"
+    #WITH_FLOAT_OPTS="--with-float=hard --with-fpu=fp-armv8"
+    WITH_FLOAT_OPTS="--with-float=hard --with-fpu=fpv5-sp-d16"
+    # TODO: Make the float option selectable or automatic,
+    # the float opts does not fully be chosen in runtime even
+    # with multilib enabled.
   else
     WITH_FLOAT_OPTS="--with-float=soft"
   fi
+fi
+
+# RISC-V specific flags
+
+if [[ $TARGET == *"riscv"* ]]
+then
+  # Experimental
+  # -mcpu=n45 -mtune=n45 -march=rv32v5d  --with-tune=n45
+  # --with-arch=rv32imfdcxandes --with-tune=andes-25-series --with-abi=ilp32d --with-multilib-list=dsp,no-fma,andes45 --enable-threads=single
+  TARGET_OPTS="--with-arch=rv32imfdc"
+  WITH_ABI_OPTS="--with-abi=ilp32d --enable-threads=single"
+  #TARGET_OPTS="--with-arch=rv32id"
+  #WITH_ABI_OPTS="--with-abi=ilp32d --with-isa-spec=2.2"
+  # 'CFLAGS_FOR_TARGET=-Os -mcmodel=medlow' 'CXXFLAGS_FOR_TARGET=-Os -mcmodel=medlow'
 fi
 
 # Extra optimization options for small size
